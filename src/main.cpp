@@ -74,6 +74,7 @@ struct SwapChainSupportDetails {
 struct Vertex {
     glm::vec2 pos;
     glm::vec3 color;
+    glm::vec2 uv;
 
     static vk::VertexInputBindingDescription getBindingDescription() {
         vk::VertexInputBindingDescription bindingDescription = {};
@@ -84,19 +85,20 @@ struct Vertex {
         return bindingDescription;
     }
 
-    static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions() {
-        std::array<vk::VertexInputAttributeDescription, 2> attributeDescriptions = {};
-        attributeDescriptions[0].binding = 0;
-        attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format = vk::Format::eR32G32Sfloat;
-        attributeDescriptions[0].offset = offsetof(Vertex, pos);
+    static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions() {
+        return std::array<vk::VertexInputAttributeDescription, 3> {
+            vk::VertexInputAttributeDescription(
+                    0, 0,
+                    vk::Format::eR32G32Sfloat, offsetof(Vertex, pos)),
 
-        attributeDescriptions[1].binding = 0;
-        attributeDescriptions[1].location = 1;
-        attributeDescriptions[1].format = vk::Format::eR32G32B32Sfloat;
-        attributeDescriptions[1].offset = offsetof(Vertex, color);
+            vk::VertexInputAttributeDescription(
+                    1, 0, // location and binding
+                    vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)),
 
-        return attributeDescriptions;
+            vk::VertexInputAttributeDescription(
+                    2, 0, // location and binding
+                    vk::Format::eR32G32Sfloat, offsetof(Vertex, uv)),
+        };
     }
 };
 
@@ -114,10 +116,10 @@ struct Texture {
 };
 
 const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
 };
 
 const std::vector<uint16_t> indices = {
@@ -520,8 +522,14 @@ private:
     }
 
 	void createDescriptorPool() {
-		vk::DescriptorPoolSize poolSize(vk::DescriptorType::eUniformBuffer, static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT));
-		vk::DescriptorPoolCreateInfo poolCreateInfo({}, static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT), 1, &poolSize);
+        std::array<vk::DescriptorPoolSize, 2> poolSizes = {
+            // UBO
+            vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT),
+            // Sampler
+            vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT),
+        };
+		vk::DescriptorPoolCreateInfo poolCreateInfo({},
+                MAX_FRAMES_IN_FLIGHT, poolSizes.size(), poolSizes.data());
         try {
 			descriptorPool = device->createDescriptorPool(poolCreateInfo);
         } catch (vk::SystemError const &err) {
@@ -541,18 +549,35 @@ private:
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			vk::DescriptorBufferInfo bufferInfo(uniformBuffers[i], 0, sizeof(UniformBufferObject));
-			vk::WriteDescriptorSet writeDescriptor(
-					descriptorSets[i], 0, 0, 1, vk::DescriptorType::eUniformBuffer,
-					nullptr, // image info
-					&bufferInfo
-					);
-			device->updateDescriptorSets(1, &writeDescriptor, 0, nullptr);
+            vk::DescriptorImageInfo imageInfo(texture.sampler, texture.view, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+            std::array<vk::WriteDescriptorSet, 2> descriptorWrites = {
+                // UBO
+                vk::WriteDescriptorSet(
+                        descriptorSets[i], 0, 0, 1, vk::DescriptorType::eUniformBuffer,
+                        nullptr, // image info
+                        &bufferInfo
+                        ),
+                // Image sampler
+                vk::WriteDescriptorSet(
+                        descriptorSets[i], 1, 0, 1, vk::DescriptorType::eCombinedImageSampler,
+                        &imageInfo,
+                        nullptr
+                        ),
+            };
+			device->updateDescriptorSets(
+                    descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
 		}
 	}
 
 	void createDescriptorSetLayout() {
-		vk::DescriptorSetLayoutBinding uboLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex, nullptr);
-		vk::DescriptorSetLayoutCreateInfo layoutCreateInfo({}, 1, &uboLayoutBinding);
+        std::array<vk::DescriptorSetLayoutBinding, 2> bindings = {
+            // UBO binding
+            vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex, nullptr),
+            vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment),
+        };
+
+		vk::DescriptorSetLayoutCreateInfo layoutCreateInfo({}, bindings.size(), bindings.data());
         try {
 			descriptorSetLayout = device->createDescriptorSetLayout(layoutCreateInfo, nullptr);
         } catch (vk::SystemError const &err) {
