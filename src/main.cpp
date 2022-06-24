@@ -109,6 +109,8 @@ struct UniformBufferObject {
 struct Texture {
     vk::Image image;
     vk::DeviceMemory memory;
+    vk::ImageView view;
+    vk::Sampler sampler;
 };
 
 const std::vector<Vertex> vertices = {
@@ -248,18 +250,50 @@ private:
                     texture);
             // initial image layout is eUndefined
             transitionImageLayout(
-                    texture.image, vk::Format::eR8G8B8Srgb,
+                    texture.image, vk::Format::eR8G8B8A8Srgb,
                     vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
             copyBufferToImage(stagingBuffer, texture.image, texWidth, texHeight);
 
             // To sample the image, one last image layout transition
             transitionImageLayout(
-                    texture.image, vk::Format::eR8G8B8Srgb,
+                    texture.image, vk::Format::eR8G8B8A8Srgb,
                     vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eReadOnlyOptimal);
 
             // Clean up staging
             device->destroyBuffer(stagingBuffer);
             device->freeMemory(stagingBufferMemory);
+
+            // Image view
+            texture.view = createImageView(texture.image, vk::Format::eR8G8B8A8Srgb);
+
+            // sampler
+            vk::PhysicalDeviceProperties deviceProperties = physicalDevice.getProperties();
+            vk::SamplerCreateInfo samplerInfo({},
+                    // mag min filter
+                    vk::Filter::eLinear, vk::Filter::eLinear,
+                    // mipmap
+                    vk::SamplerMipmapMode::eLinear,
+                    // address mode; uvw
+                    vk::SamplerAddressMode::eRepeat,
+                    vk::SamplerAddressMode::eRepeat,
+                    vk::SamplerAddressMode::eRepeat,
+                    // mip lod bias
+                    0.0f,
+                    // antisotropy
+                    true,
+                    deviceProperties.limits.maxSamplerAnisotropy,
+                    // comparison function
+                    false,
+                    vk::CompareOp::eAlways,
+                    // min lod max lod
+                    0.0f, 0.0f,
+                    // border color
+                    vk::BorderColor::eIntOpaqueBlack,
+                    // unnormalized coordinates
+                    false
+                    );
+            texture.sampler = device->createSampler(samplerInfo);
+            // might add try catch
         }
 
         createBuffers();
@@ -301,6 +335,8 @@ private:
 
         cleanupSwapChain();
 
+        device->destroySampler(texture.sampler);
+        device->destroyImageView(texture.view);
         device->destroyImage(texture.image);
         device->freeMemory(texture.memory);
 
@@ -457,7 +493,8 @@ private:
                 });
         }
 
-        auto deviceFeatures = vk::PhysicalDeviceFeatures();
+        vk::PhysicalDeviceFeatures deviceFeatures;
+        deviceFeatures.samplerAnisotropy = true;
         auto createInfo = vk::DeviceCreateInfo(
             vk::DeviceCreateFlags(),
             static_cast<uint32_t>(queueCreateInfos.size()),
@@ -582,26 +619,7 @@ private:
         swapChainImageViews.resize(swapChainImages.size());
 
         for (size_t i = 0; i < swapChainImages.size(); ++i) {
-            vk::ImageViewCreateInfo createInfo = {};
-            createInfo.image = swapChainImages[i];
-            createInfo.viewType = vk::ImageViewType::e2D;
-            createInfo.format = swapChainImageFormat;
-            createInfo.components.r = vk::ComponentSwizzle::eIdentity;
-            createInfo.components.g = vk::ComponentSwizzle::eIdentity;
-            createInfo.components.b = vk::ComponentSwizzle::eIdentity;
-            createInfo.components.a = vk::ComponentSwizzle::eIdentity;
-            createInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-            createInfo.subresourceRange.baseMipLevel = 0;
-            createInfo.subresourceRange.levelCount = 1;
-            createInfo.subresourceRange.baseArrayLayer = 0;
-            createInfo.subresourceRange.layerCount = 1;
-
-            try {
-                swapChainImageViews[i] = device->createImageView(createInfo);
-            }
-            catch (vk::SystemError const &err) {
-                throw std::runtime_error("failed to create image views!");
-            }
+            swapChainImageViews[i] = createImageView(swapChainImages[i], swapChainImageFormat);
         }
     }
 
@@ -919,6 +937,30 @@ private:
     //////
     // IMAGE //
     //////
+
+
+    vk::ImageView createImageView(vk::Image image, vk::Format format) {
+        vk::ImageViewCreateInfo createInfo = {};
+        createInfo.image = image;
+        createInfo.viewType = vk::ImageViewType::e2D;
+        createInfo.format = format;
+        createInfo.components.r = vk::ComponentSwizzle::eIdentity;
+        createInfo.components.g = vk::ComponentSwizzle::eIdentity;
+        createInfo.components.b = vk::ComponentSwizzle::eIdentity;
+        createInfo.components.a = vk::ComponentSwizzle::eIdentity;
+        createInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+        createInfo.subresourceRange.baseMipLevel = 0;
+        createInfo.subresourceRange.levelCount = 1;
+        createInfo.subresourceRange.baseArrayLayer = 0;
+        createInfo.subresourceRange.layerCount = 1;
+
+        try {
+            return device->createImageView(createInfo);
+        }
+        catch (vk::SystemError const &err) {
+            throw std::runtime_error("failed to create image views!");
+        }
+    }
     
 
     void createTexture(
@@ -1265,7 +1307,9 @@ private:
             swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
         }
 
-        return indices.isComplete() && extensionsSupported && swapChainAdequate;
+        vk::PhysicalDeviceFeatures supportedFeatures = device.getFeatures();
+
+        return indices.isComplete() && extensionsSupported && swapChainAdequate && supportedFeatures.samplerAnisotropy;
     }
 
     bool checkDeviceExtensionSupport(const vk::PhysicalDevice& device) {
