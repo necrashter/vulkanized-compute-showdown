@@ -1,0 +1,12 @@
+[
+{
+  "directory": "/home/ilker/Programming/cmaketraining/optional_libtut/build",
+  "command": "/usr/bin/c++  -std=c++17 -I/home/ilker/Programming/cmaketraining/optional_libtut/build -I/home/ilker/Programming/cmaketraining/optional_libtut/src -I/home/ilker/Programming/cmaketraining/optional_libtut/MuhLib    -o CMakeFiles/App.dir/src/main.cpp.o -c /home/ilker/Programming/cmaketraining/optional_libtut/src/main.cpp",
+  "file": "/home/ilker/Programming/cmaketraining/optional_libtut/src/main.cpp"
+},
+{
+  "directory": "/home/ilker/Programming/cmaketraining/optional_libtut/build/MuhLib",
+  "command": "/usr/bin/c++      -o CMakeFiles/MuhLib.dir/MuhFun.cpp.o -c /home/ilker/Programming/cmaketraining/optional_libtut/MuhLib/MuhFun.cpp",
+  "file": "/home/ilker/Programming/cmaketraining/optional_libtut/MuhLib/MuhFun.cpp"
+}
+]
