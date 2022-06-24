@@ -106,6 +106,11 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 proj;
 };
 
+struct Texture {
+    vk::Image image;
+    vk::DeviceMemory memory;
+};
+
 const std::vector<Vertex> vertices = {
     {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
     {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
@@ -171,6 +176,8 @@ private:
     std::vector<vk::Fence> inFlightFences;
     size_t currentFrame = 0;
 
+    Texture texture;
+
     bool framebufferResized = false;
 
     void initWindow() {
@@ -198,14 +205,66 @@ private:
         createSwapChain();
         createImageViews();
         createRenderPass();
-		createDescriptorSetLayout();
+        createDescriptorSetLayout();
         createGraphicsPipeline();
         createFramebuffers();
         createCommandPool();
 
+        // Create texture image
+        {
+            // Read image
+            int texWidth, texHeight, texChannels;
+            stbi_uc* pixels = stbi_load("../gfx/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+            VkDeviceSize imageSize = texWidth * texHeight * 4;
+
+            if (!pixels) {
+                throw std::runtime_error("failed to load texture image!");
+            }
+
+            // Staging buffer
+            vk::Buffer stagingBuffer;
+            vk::DeviceMemory stagingBufferMemory;
+
+            createBuffer(
+                    imageSize,
+                    vk::BufferUsageFlagBits::eTransferSrc,
+                    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                    stagingBuffer, stagingBufferMemory
+                    );
+
+            void *data = device->mapMemory(stagingBufferMemory, 0, imageSize);
+            memcpy(data, pixels, imageSize);
+            device->unmapMemory(stagingBufferMemory);
+
+            // No need for pixels now
+            stbi_image_free(pixels);
+
+            createTexture(
+                    texWidth, texHeight,
+                    vk::Format::eR8G8B8A8Srgb,
+                    vk::ImageTiling::eOptimal,
+                    vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+                    vk::MemoryPropertyFlagBits::eDeviceLocal,
+                    texture);
+            // initial image layout is eUndefined
+            transitionImageLayout(
+                    texture.image, vk::Format::eR8G8B8Srgb,
+                    vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+            copyBufferToImage(stagingBuffer, texture.image, texWidth, texHeight);
+
+            // To sample the image, one last image layout transition
+            transitionImageLayout(
+                    texture.image, vk::Format::eR8G8B8Srgb,
+                    vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eReadOnlyOptimal);
+
+            // Clean up staging
+            device->destroyBuffer(stagingBuffer);
+            device->freeMemory(stagingBufferMemory);
+        }
+
         createBuffers();
-		createDescriptorPool();
-		createDescriptorSets();
+        createDescriptorPool();
+        createDescriptorSets();
         createCommandBuffers();
         createSyncObjects();
     }
@@ -241,6 +300,9 @@ private:
         // NOTE: instance destruction is handled by UniqueInstance, same for device
 
         cleanupSwapChain();
+
+        device->destroyImage(texture.image);
+        device->freeMemory(texture.memory);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			device->destroyBuffer(uniformBuffers[i]);
@@ -813,7 +875,7 @@ private:
         device->bindBufferMemory(buffer, bufferMemory, 0);
     }
 
-    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+    vk::CommandBuffer beginOneShotCommands() {
         vk::CommandBufferAllocateInfo allocInfo = {};
         allocInfo.level = vk::CommandBufferLevel::ePrimary;
         allocInfo.commandPool = commandPool;
@@ -826,12 +888,10 @@ private:
 
         commandBuffer.begin(beginInfo);
 
-            vk::BufferCopy copyRegion = {};
-            copyRegion.srcOffset = 0; // Optional
-            copyRegion.dstOffset = 0; // Optional
-            copyRegion.size = size;
-            commandBuffer.copyBuffer(srcBuffer, dstBuffer, copyRegion);
+        return commandBuffer;
+    }
 
+    void endOneShotCommands(vk::CommandBuffer commandBuffer) {
         commandBuffer.end();
 
         vk::SubmitInfo submitInfo = {};
@@ -842,6 +902,119 @@ private:
         graphicsQueue.waitIdle();
 
         device->freeCommandBuffers(commandPool, commandBuffer);
+    }
+
+    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+        vk::CommandBuffer commandBuffer = beginOneShotCommands();
+
+        vk::BufferCopy copyRegion = {};
+        copyRegion.srcOffset = 0; // Optional
+        copyRegion.dstOffset = 0; // Optional
+        copyRegion.size = size;
+        commandBuffer.copyBuffer(srcBuffer, dstBuffer, copyRegion);
+
+        endOneShotCommands(commandBuffer);
+    }
+
+    //////
+    // IMAGE //
+    //////
+    
+
+    void createTexture(
+            uint32_t width, uint32_t height,
+            vk::Format format,
+            vk::ImageTiling tiling,
+            vk::ImageUsageFlags usage,
+            vk::MemoryPropertyFlags properties,
+            Texture& texture) {
+        vk::ImageCreateInfo createInfo({},
+                vk::ImageType::e2D,
+                format,
+                {width, height, 1},
+                1, // mip levels
+                1, // array levels
+                vk::SampleCountFlagBits::e1,
+                tiling, usage,
+                vk::SharingMode::eExclusive);
+
+        texture.image = device->createImage(createInfo);
+
+        vk::MemoryRequirements memreq = device->getImageMemoryRequirements(texture.image);
+
+        vk::MemoryAllocateInfo allocInfo(
+                memreq.size,
+                findMemoryType(memreq.memoryTypeBits, properties)
+                );
+        texture.memory = device->allocateMemory(allocInfo);
+
+        device->bindImageMemory(texture.image, texture.memory, 0);
+    }
+
+    void transitionImageLayout(
+            vk::Image image, vk::Format format,
+            vk::ImageLayout oldLayout, vk::ImageLayout newLayout
+            ) {
+        vk::CommandBuffer commandBuffer = beginOneShotCommands();
+
+        vk::ImageMemoryBarrier barrier(
+                {}, {},
+                oldLayout, newLayout,
+                VK_QUEUE_FAMILY_IGNORED,
+                VK_QUEUE_FAMILY_IGNORED,
+                image,
+                vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+
+        vk::PipelineStageFlags srcStage, dstStage;
+
+        if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal) {
+            // Transfer writes don't need to wait for anything
+            barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+
+            srcStage = vk::PipelineStageFlagBits::eTopOfPipe;
+            dstStage = vk::PipelineStageFlagBits::eTransfer;
+        } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eReadOnlyOptimal) {
+            // Shader reading should wait for transfer writes
+            barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+            barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+            srcStage = vk::PipelineStageFlagBits::eTransfer;
+            dstStage = vk::PipelineStageFlagBits::eFragmentShader;
+        } else {
+            throw std::invalid_argument("unsupported layout transition");
+        }
+
+        commandBuffer.pipelineBarrier(
+                srcStage, dstStage,
+                (vk::DependencyFlags) 0,
+                0, nullptr,
+                0, nullptr,
+                1, &barrier
+                );
+
+        endOneShotCommands(commandBuffer);
+    }
+
+    void copyBufferToImage(
+            vk::Buffer buffer, vk::Image image,
+            uint32_t width, uint32_t height
+            ) {
+        vk::CommandBuffer commandBuffer = beginOneShotCommands();
+
+        vk::BufferImageCopy region(
+                0, 0, 0,
+                vk::ImageSubresourceLayers(
+                    vk::ImageAspectFlagBits::eColor,
+                    0, 0, 1),
+                {0, 0, 0},
+                {width, height, 1});
+
+        commandBuffer.copyBufferToImage(
+                buffer, image,
+                vk::ImageLayout::eTransferDstOptimal,
+                1, &region);
+
+        endOneShotCommands(commandBuffer);
     }
 
     uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) {
