@@ -133,7 +133,11 @@ const std::vector<Vertex> vertices = {
     {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
 };
 
-const std::vector<uint16_t> indices = {
+
+typedef uint16_t index_t;
+const vk::IndexType vkindex_t = vk::IndexType::eUint16;
+
+const std::vector<index_t> indices = {
     0, 1, 2, 2, 3, 0,
     4, 5, 6, 6, 7, 4,
 };
@@ -1243,7 +1247,7 @@ private:
                 vk::Buffer vertexBuffers[] = { vertexBuffer };
                 vk::DeviceSize offsets[] = { 0 };
                 commandBuffers[i].bindVertexBuffers(0, 1, vertexBuffers, offsets);
-                commandBuffers[i].bindIndexBuffer(indexBuffer, 0, vk::IndexType::eUint16);
+                commandBuffers[i].bindIndexBuffer(indexBuffer, 0, vkindex_t);
 
 				commandBuffers[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 				commandBuffers[i].drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
