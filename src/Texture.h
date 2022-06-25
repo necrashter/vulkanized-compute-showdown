@@ -6,6 +6,8 @@
 
 #include "stb_image.h"
 
+#include <math.h>
+
 
 class TextureImage {
 public:
@@ -13,6 +15,7 @@ public:
     vk::DeviceMemory memory;
     vk::ImageView view;
     vk::Sampler sampler;
+	uint32_t mipLevels;
 
     void load(VulkanContext* context, const char* filename) {
         // Read image
@@ -41,6 +44,8 @@ public:
         vk::Buffer stagingBuffer;
         vk::DeviceMemory stagingBufferMemory;
 
+        mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
+
         context->createBuffer(
                 bufferSize,
                 vk::BufferUsageFlagBits::eTransferSrc,
@@ -54,28 +59,37 @@ public:
 
         context->createImage(
                 texWidth, texHeight,
+                mipLevels,
                 imageFormat,
                 vk::ImageTiling::eOptimal,
-                vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+                vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled
+                | vk::ImageUsageFlagBits::eTransferSrc, // for generating mipmaps
                 vk::MemoryPropertyFlagBits::eDeviceLocal,
                 image, memory);
         // initial image layout is eUndefined
         context->transitionImageLayout(
                 image, imageFormat,
+                mipLevels,
                 vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
         context->copyBufferToImage(stagingBuffer, image, texWidth, texHeight);
 
         // To sample the image, one last image layout transition
-        context->transitionImageLayout(
-                image, imageFormat,
-                vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eReadOnlyOptimal);
+        // context->transitionImageLayout(
+        //         image, imageFormat,
+        //         mipLevels,
+        //         vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+        // NOTE: The operation above will be performed while generating mipmaps
 
-        // Clean up staging
+        // Clean up staging buffer
         context->device->destroyBuffer(stagingBuffer);
         context->device->freeMemory(stagingBufferMemory);
 
+        // Generate mipmaps
+        context->generateMipmaps(image, imageFormat, texWidth, texHeight, mipLevels);
+
         // Image view
-        view = context->createImageView(image, imageFormat, vk::ImageAspectFlagBits::eColor);
+        view = context->createImageView(image, imageFormat,
+                vk::ImageAspectFlagBits::eColor, mipLevels);
 
         // sampler
         vk::PhysicalDeviceProperties deviceProperties = context->physicalDevice.getProperties();
@@ -96,13 +110,14 @@ public:
                 // comparison function
                 false,
                 vk::CompareOp::eAlways,
-                // min lod max lod
-                0.0f, 0.0f,
+                // min lod & max lod
+                // 0.5f * (float)mipLevels, (float)mipLevels,  // use this to force mipmap
+                0.0f, (float)mipLevels,
                 // border color
                 vk::BorderColor::eIntOpaqueBlack,
                 // unnormalized coordinates
                 false
-                    );
+                );
         sampler = context->device->createSampler(samplerInfo);
         // might add try catch
     }

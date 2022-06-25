@@ -136,6 +136,7 @@ public:
 
     void createImage(
             uint32_t width, uint32_t height,
+            uint32_t mipLevels,
             vk::Format format,
             vk::ImageTiling tiling,
             vk::ImageUsageFlags usage,
@@ -147,7 +148,7 @@ public:
                 vk::ImageType::e2D,
                 format,
                 {width, height, 1},
-                1, // mip levels
+                mipLevels, // mip levels
                 1, // array levels
                 vk::SampleCountFlagBits::e1,
                 tiling, usage,
@@ -168,6 +169,7 @@ public:
 
     void transitionImageLayout(
             vk::Image image, vk::Format format,
+            uint32_t mipLevels,
             vk::ImageLayout oldLayout, vk::ImageLayout newLayout
             ) {
         vk::CommandBuffer commandBuffer = beginOneShotCommands();
@@ -178,7 +180,7 @@ public:
                 VK_QUEUE_FAMILY_IGNORED,
                 VK_QUEUE_FAMILY_IGNORED,
                 image,
-                vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+                vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, mipLevels, 0, 1));
 
         if (newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal) {
             barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
@@ -249,7 +251,7 @@ public:
         endOneShotCommands(commandBuffer);
     }
 
-    vk::ImageView createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlags aspectFlags) {
+    vk::ImageView createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlags aspectFlags, uint32_t mipLevels) {
         vk::ImageViewCreateInfo createInfo = {};
         createInfo.image = image;
         createInfo.viewType = vk::ImageViewType::e2D;
@@ -260,7 +262,7 @@ public:
         createInfo.components.a = vk::ComponentSwizzle::eIdentity;
         createInfo.subresourceRange.aspectMask = aspectFlags;
         createInfo.subresourceRange.baseMipLevel = 0;
-        createInfo.subresourceRange.levelCount = 1;
+        createInfo.subresourceRange.levelCount = mipLevels;
         createInfo.subresourceRange.baseArrayLayer = 0;
         createInfo.subresourceRange.layerCount = 1;
 
@@ -270,6 +272,88 @@ public:
         catch (vk::SystemError const &err) {
             throw std::runtime_error("failed to create image views!");
         }
+    }
+
+    void generateMipmaps(vk::Image image, vk::Format format, int32_t w, int32_t h, uint32_t mipLevels) {
+        auto formatProperties = physicalDevice.getFormatProperties(format);
+        if (!(formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
+            throw std::runtime_error("Image format doesn't support linear blitting (required for generating mipmaps");
+            // Alternative solutions you can implement in this case:
+            // software resize e.g. stb_image_resize
+            // Load mipmap levels from file (for better loading time)
+        }
+        vk::CommandBuffer commandBuffer = beginOneShotCommands();
+
+        // This barrier is used to change the type of mip source
+        vk::ImageMemoryBarrier mipSourceBarrier(
+                // src & dst access flags
+                vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eTransferRead,
+                // old & new layouts
+                vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal,
+                // src & dst q family indices
+                VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+                image,
+                vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+
+        // this barrier is used to convert a mip level to shader read-only optimal layout
+        vk::ImageMemoryBarrier finalBarrier(
+                // src & dst access flags
+                vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead,
+                // old & new layouts
+                vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+                // src & dst q family indices
+                VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+                image,
+                vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+
+        for (uint32_t i = 1; i < mipLevels; ++i) {
+            int32_t nw = w > 1 ? w/2 : 1;
+            int32_t nh = h > 1 ? h/2 : 1;
+
+            mipSourceBarrier.subresourceRange.baseMipLevel = i-1;
+            commandBuffer.pipelineBarrier(
+                    vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer,
+                    (vk::DependencyFlags) 0,
+                    0, nullptr,
+                    0, nullptr,
+                    1, &mipSourceBarrier);
+
+            vk::ImageBlit blit(
+                    vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, i-1, 0, 1),
+                    { vk::Offset3D{0, 0, 0}, vk::Offset3D{w, h, 1} },
+                    vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, i, 0, 1),
+                    { vk::Offset3D{0, 0, 0}, vk::Offset3D{nw, nh, 1} }
+                    );
+
+            // NOTE: In case you create a dedicated transfer queue: blit image neeeds graphicsQueue
+            commandBuffer.blitImage(
+                    image, vk::ImageLayout::eTransferSrcOptimal,
+                    image, vk::ImageLayout::eTransferDstOptimal,
+                    1, &blit,
+                    vk::Filter::eLinear);
+
+            finalBarrier.subresourceRange.baseMipLevel = i-1;
+            commandBuffer.pipelineBarrier(
+                    vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader,
+                    (vk::DependencyFlags) 0,
+                    0, nullptr,
+                    0, nullptr,
+                    1, &finalBarrier);
+
+            w = nw; h = nh;
+        }
+
+        finalBarrier.subresourceRange.baseMipLevel = mipLevels-1;
+        // Note that the previous layout of last mip level is different
+        finalBarrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+        commandBuffer.pipelineBarrier(
+                vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader,
+                (vk::DependencyFlags) 0,
+                0, nullptr,
+                0, nullptr,
+                1, &finalBarrier);
+
+        endOneShotCommands(commandBuffer);
     }
 
     /*
