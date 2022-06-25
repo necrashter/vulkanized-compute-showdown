@@ -96,7 +96,8 @@ add_custom_target(compile-shaders ALL DEPENDS ${SPV_SHADERS})
 #######################################################################
 
 # Add the executable
-add_executable(main src/main.cpp)
+file(GLOB MAIN_SRC "src/*.cpp")
+add_executable(main ${MAIN_SRC})
 
 # Add the binary tree to the search path for include files
 target_include_directories(main PUBLIC
