@@ -1,12 +1,12 @@
 [
 {
-  "directory": "/home/ilker/Programming/cmaketraining/optional_libtut/build",
-  "command": "/usr/bin/c++  -std=c++17 -I/home/ilker/Programming/cmaketraining/optional_libtut/build -I/home/ilker/Programming/cmaketraining/optional_libtut/src -I/home/ilker/Programming/cmaketraining/optional_libtut/MuhLib    -o CMakeFiles/App.dir/src/main.cpp.o -c /home/ilker/Programming/cmaketraining/optional_libtut/src/main.cpp",
-  "file": "/home/ilker/Programming/cmaketraining/optional_libtut/src/main.cpp"
+  "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin",
+  "command": "/usr/bin/c++   -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/main.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/main.cpp",
+  "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/main.cpp"
 },
 {
-  "directory": "/home/ilker/Programming/cmaketraining/optional_libtut/build/MuhLib",
-  "command": "/usr/bin/c++      -o CMakeFiles/MuhLib.dir/MuhFun.cpp.o -c /home/ilker/Programming/cmaketraining/optional_libtut/MuhLib/MuhFun.cpp",
-  "file": "/home/ilker/Programming/cmaketraining/optional_libtut/MuhLib/MuhFun.cpp"
+  "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin/libs/tinygltf",
+  "command": "/usr/bin/c++    -Wall -g   -std=gnu++17 -o CMakeFiles/tiny_gltf.dir/tiny_gltf.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf/tiny_gltf.cpp",
+  "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf/tiny_gltf.cpp"
 }
 ]

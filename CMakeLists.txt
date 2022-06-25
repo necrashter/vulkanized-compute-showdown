@@ -27,6 +27,11 @@ if(USE_MUHLIB)
     add_compile_definitions(USE_MUHLIB)
 endif()
 
+# Tiny GLTF
+add_subdirectory(libs/tinygltf)
+list(APPEND EXTRA_LIBS tiny_gltf)
+list(APPEND EXTRA_INCLUDES "${PROJECT_SOURCE_DIR}/libs/tinygltf")
+
 # TODO:
 # add_subdirectory(libs)
 
