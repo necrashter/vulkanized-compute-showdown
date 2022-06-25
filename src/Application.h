@@ -2,7 +2,7 @@
 #define APPLICATION_H
 
 #include "VulkanContext.h"
-#include "SampleModel.h"
+#include "Model.h"
 #include "Texture.h"
 
 #include <vulkan/vulkan.hpp>
@@ -115,11 +115,11 @@ private:
     vk::PipelineLayout pipelineLayout;
     vk::Pipeline graphicsPipeline;
 
-	vk::DescriptorPool descriptorPool;
-	std::vector<vk::DescriptorSet> descriptorSets;
+    vk::DescriptorPool descriptorPool;
+    std::vector<vk::DescriptorSet> descriptorSets;
 
-	std::vector<vk::Buffer> uniformBuffers;
-	std::vector<vk::DeviceMemory> uniformBuffersMemory;
+    std::vector<vk::Buffer> uniformBuffers;
+    std::vector<vk::DeviceMemory> uniformBuffersMemory;
 
     std::vector<vk::CommandBuffer, std::allocator<vk::CommandBuffer>> commandBuffers;
 
@@ -128,10 +128,7 @@ private:
     std::vector<vk::Fence> inFlightFences;
     size_t currentFrame = 0;
 
-    std::vector<Material> materials;
-    std::vector<vk::DescriptorSet> materialDescriptorSets;
-
-    SampleModel model;
+    Model model;
 
     bool framebufferResized = false;
 
@@ -176,11 +173,7 @@ private:
         // Create frame buffers (requires depthImageView to be ready)
         createFramebuffers();
 
-        {
-            Material material;
-            material.texture.load(this, "../gfx/texture.jpg");
-            materials.push_back(material);
-        }
+        model.loadFile("../assets/VikingRoom.gltf");
 
         createBuffers();
         createDescriptorPool();
@@ -238,19 +231,15 @@ private:
 
         cleanupSwapChain();
 
-        for (Material material : materials) {
-            material.texture.cleanup(this);
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            device->destroyBuffer(uniformBuffers[i]);
+            device->freeMemory(uniformBuffersMemory[i]);
         }
 
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			device->destroyBuffer(uniformBuffers[i]);
-			device->freeMemory(uniformBuffersMemory[i]);
-		}
-
-		// DescriptorSets are removed automatically with descriptorPool
-		device->destroyDescriptorPool(descriptorPool);
-		device->destroyDescriptorSetLayout(descriptorSetLayouts.perFrame);
-		device->destroyDescriptorSetLayout(descriptorSetLayouts.perMaterial);
+        // DescriptorSets are removed automatically with descriptorPool
+        device->destroyDescriptorPool(descriptorPool);
+        device->destroyDescriptorSetLayout(descriptorSetLayouts.perFrame);
+        device->destroyDescriptorSetLayout(descriptorSetLayouts.perMaterial);
 
         model.cleanup();
 
@@ -426,25 +415,25 @@ private:
 
     void createDescriptorSetLayout() {
         vk::DescriptorSetLayoutBinding uboBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex, nullptr);
-        vk::DescriptorSetLayoutBinding textureBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment);
 
         try {
             descriptorSetLayouts.perFrame = device->createDescriptorSetLayout({{}, 1, &uboBinding});
-            descriptorSetLayouts.perMaterial = device->createDescriptorSetLayout({{}, 1, &textureBinding});
+            descriptorSetLayouts.perMaterial = model.createMaterialDescriptorSetLayout();
         } catch (vk::SystemError const &err) {
             throw std::runtime_error("failed to create descriptor set layout!");
         }
     }
 
     void createDescriptorPool() {
+        size_t materialCount = model.materials.size();
         std::array<vk::DescriptorPoolSize, 2> poolSizes = {
             // UBO
             vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT),
             // Sampler
-            vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, materials.size()),
+            vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, materialCount),
         };
         vk::DescriptorPoolCreateInfo poolCreateInfo({},
-                MAX_FRAMES_IN_FLIGHT + materials.size(),
+                MAX_FRAMES_IN_FLIGHT + materialCount,
                 poolSizes.size(), poolSizes.data());
         try {
             descriptorPool = device->createDescriptorPool(poolCreateInfo);
@@ -453,10 +442,10 @@ private:
         }
     }
 
-	void createDescriptorSets() {
+    void createDescriptorSets() {
         try {
             std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayouts.perFrame);
-			descriptorSets = device->allocateDescriptorSets(vk::DescriptorSetAllocateInfo(
+            descriptorSets = device->allocateDescriptorSets(vk::DescriptorSetAllocateInfo(
                         descriptorPool,
                         static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
                         layouts.data()));
@@ -479,36 +468,7 @@ private:
                     descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
         }
 
-        // Materials
-
-        try {
-            std::vector<vk::DescriptorSetLayout> layouts(materials.size(), descriptorSetLayouts.perMaterial);
-            materialDescriptorSets = device->allocateDescriptorSets(vk::DescriptorSetAllocateInfo(
-                        descriptorPool,
-                        materials.size(),
-                        layouts.data()));
-        } catch (vk::SystemError const &err) {
-            throw std::runtime_error("failed to allocate descriptor sets!");
-        }
-
-        for (uint32_t i = 0; i < materials.size(); ++i) {
-            vk::DescriptorImageInfo imageInfo(
-                    materials[i].texture.sampler,
-                    materials[i].texture.view,
-                    vk::ImageLayout::eShaderReadOnlyOptimal);
-
-            std::array<vk::WriteDescriptorSet, 1> descriptorWrites = {
-                // Image sampler
-                vk::WriteDescriptorSet(
-                        materialDescriptorSets[i], 0, 0, 1,
-                        vk::DescriptorType::eCombinedImageSampler,
-                        &imageInfo,
-                        nullptr
-                        ),
-            };
-            device->updateDescriptorSets(
-                    descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
-        }
+        model.createMaterialDescriptorSets(descriptorPool, descriptorSetLayouts.perMaterial);
     }
 
     /*
@@ -663,8 +623,8 @@ private:
         vertexInputInfo.vertexBindingDescriptionCount = 0;
         vertexInputInfo.vertexAttributeDescriptionCount = 0;
 
-        auto bindingDescription = model.getBindingDescription();
-        auto attributeDescriptions = model.getAttributeDescriptions();
+        auto bindingDescription = Model::vertexBindingDescription;
+        auto attributeDescriptions = Model::vertexAttributeDescription;
 
         vertexInputInfo.vertexBindingDescriptionCount = 1;
         vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
@@ -684,9 +644,9 @@ private:
         viewport.maxDepth = 1.0f;
 
         vk::Rect2D scissor(
-				{0, 0}, // Offset
-				swapChainExtent // extent
-				);
+                {0, 0}, // Offset
+                swapChainExtent // extent
+                );
 
         vk::PipelineViewportStateCreateInfo viewportState = {};
         viewportState.viewportCount = 1;
@@ -727,7 +687,7 @@ private:
             descriptorSetLayouts.perMaterial,
         };
         pipelineLayoutInfo.setLayoutCount = setLayouts.size();
-		pipelineLayoutInfo.pSetLayouts = setLayouts.data();
+        pipelineLayoutInfo.pSetLayouts = setLayouts.data();
         pipelineLayoutInfo.pushConstantRangeCount = 0;
 
         try {
@@ -820,19 +780,19 @@ private:
     void createBuffers() {
         model.createBuffers();
 
-		// Uniform buffers
-		vk::DeviceSize uniformBufferSize = sizeof(UniformBufferObject);
-		uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-		uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
+        // Uniform buffers
+        vk::DeviceSize uniformBufferSize = sizeof(UniformBufferObject);
+        uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+        uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
 
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-			createBuffer(
-					uniformBufferSize,
-					vk::BufferUsageFlagBits::eUniformBuffer,
-					vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-					uniformBuffers[i], uniformBuffersMemory[i]
-					);
-		}
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            createBuffer(
+                    uniformBufferSize,
+                    vk::BufferUsageFlagBits::eUniformBuffer,
+                    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                    uniformBuffers[i], uniformBuffersMemory[i]
+                    );
+        }
     }
 
     void createCommandBuffers() {
@@ -861,10 +821,10 @@ private:
             }
 
             vk::RenderPassBeginInfo renderPassInfo(
-					renderPass, 
-					swapChainFramebuffers[i],
-					vk::Rect2D({0, 0}, swapChainExtent)
-					);
+                    renderPass, 
+                    swapChainFramebuffers[i],
+                    vk::Rect2D({0, 0}, swapChainExtent)
+                    );
 
             std::array<vk::ClearValue, 2> clearValues {
                 vk::ClearValue(vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f })),
@@ -877,10 +837,9 @@ private:
             {
                 commandBuffers[i].bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 
-				commandBuffers[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
-				commandBuffers[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 1, 1, &materialDescriptorSets[0], 0, nullptr);
+                commandBuffers[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
-                model.render(commandBuffers[i]);
+                model.render(commandBuffers[i], pipelineLayout);
             }
             commandBuffers[i].endRenderPass();
 
@@ -908,28 +867,28 @@ private:
         }
     }
 
-	void updateUniformBuffer(uint32_t index) {
-		static auto startTime = std::chrono::high_resolution_clock::now();
-		auto currentTime = std::chrono::high_resolution_clock::now();
-		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+    void updateUniformBuffer(uint32_t index) {
+        static auto startTime = std::chrono::high_resolution_clock::now();
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
-		UniformBufferObject ubo {
-			glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-			glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-			glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f)
-			};
-		// Y coordinate is inverted
-		ubo.proj[1][1] *= -1;
+        UniformBufferObject ubo {
+            glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+                glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+                glm::perspective(glm::radians(60.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f)
+        };
+        // Y coordinate is inverted
+        ubo.proj[1][1] *= -1;
 
-		void* data = device->mapMemory(uniformBuffersMemory[index], 0, sizeof(ubo));
-		memcpy(data, &ubo, sizeof(ubo));
-		device->unmapMemory(uniformBuffersMemory[index]);
-	}
+        void* data = device->mapMemory(uniformBuffersMemory[index], 0, sizeof(ubo));
+        memcpy(data, &ubo, sizeof(ubo));
+        device->unmapMemory(uniformBuffersMemory[index]);
+    }
 
     void drawFrame() {
         (void) device->waitForFences(1, &inFlightFences[currentFrame], VK_TRUE, std::numeric_limits<uint64_t>::max());
 
-		updateUniformBuffer(currentFrame);
+        updateUniformBuffer(currentFrame);
 
         uint32_t imageIndex;
         try {

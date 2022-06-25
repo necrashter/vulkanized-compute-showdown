@@ -7,7 +7,7 @@
 #include "stb_image.h"
 
 
-class Texture {
+class TextureImage {
 public:
     vk::Image image;
     vk::DeviceMemory memory;
@@ -24,40 +24,50 @@ public:
             throw std::runtime_error("failed to load texture image!");
         }
 
+        loadFromBuffer(context, pixels, imageSize, texWidth, texHeight);
+
+        // No need for pixels now
+        stbi_image_free(pixels);
+    }
+
+    void loadFromBuffer(
+            VulkanContext* context,
+            void* buffer,
+            VkDeviceSize bufferSize,
+            int texWidth,
+            int texHeight,
+            vk::Format imageFormat = vk::Format::eR8G8B8A8Srgb) {
         // Staging buffer
         vk::Buffer stagingBuffer;
         vk::DeviceMemory stagingBufferMemory;
 
         context->createBuffer(
-                imageSize,
+                bufferSize,
                 vk::BufferUsageFlagBits::eTransferSrc,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
                 stagingBuffer, stagingBufferMemory
                 );
 
-        void *data = context->device->mapMemory(stagingBufferMemory, 0, imageSize);
-        memcpy(data, pixels, imageSize);
+        void *data = context->device->mapMemory(stagingBufferMemory, 0, bufferSize);
+        memcpy(data, buffer, bufferSize);
         context->device->unmapMemory(stagingBufferMemory);
-
-        // No need for pixels now
-        stbi_image_free(pixels);
 
         context->createImage(
                 texWidth, texHeight,
-                vk::Format::eR8G8B8A8Srgb,
+                imageFormat,
                 vk::ImageTiling::eOptimal,
                 vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
                 vk::MemoryPropertyFlagBits::eDeviceLocal,
                 image, memory);
         // initial image layout is eUndefined
         context->transitionImageLayout(
-                image, vk::Format::eR8G8B8A8Srgb,
+                image, imageFormat,
                 vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
         context->copyBufferToImage(stagingBuffer, image, texWidth, texHeight);
 
         // To sample the image, one last image layout transition
         context->transitionImageLayout(
-                image, vk::Format::eR8G8B8A8Srgb,
+                image, imageFormat,
                 vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eReadOnlyOptimal);
 
         // Clean up staging
@@ -65,7 +75,7 @@ public:
         context->device->freeMemory(stagingBufferMemory);
 
         // Image view
-        view = context->createImageView(image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
+        view = context->createImageView(image, imageFormat, vk::ImageAspectFlagBits::eColor);
 
         // sampler
         vk::PhysicalDeviceProperties deviceProperties = context->physicalDevice.getProperties();
@@ -108,7 +118,7 @@ public:
 
 class Material {
 public:
-    Texture texture;
+    TextureImage texture;
 };
 
 
