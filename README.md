@@ -7,19 +7,19 @@ $ mkdir bin
 $ cd bin
 ```
 
-Configure without muhlib:
+Configure with default settings in CMakeLists.txt:
 ```sh
 $ cmake ..
 ```
-With muhlib:
+Disable ImGui:
 ```sh
-$ cmake .. -DUSE_MUHLIB=ON
+$ cmake .. -DUSE_IMGUI=OFF
 ```
 
 Compile & run:
 ```sh
 $ make
-$ ./App
+$ ./main
 ```
 
 
@@ -30,7 +30,8 @@ $ ./App
 - Implement a dedicated transfer queue
 - Optimize one shot commands
 - More efficient swap chain recreation, see vulkan tut comments
-    - Done, not as good as I initially expected, but avoid recompiling shaders
+    - Done, not as good as I initially expected, but avoids recompiling shaders
+	- Update: It's now as good as I expected. Renderpass doesn't need to be recreated, no need to wait events etc.
 - _"Using a UBO this way is not the most efficient way to pass frequently changing values to the shader. A more efficient way to pass a small buffer of data to shaders are push constants. We may look at these in a future chapter."_
     - Push Constants are done as a part of gltf rendering
 

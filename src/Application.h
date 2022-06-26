@@ -230,8 +230,6 @@ private:
             device->destroyFramebuffer(framebuffer);
         }
 
-        device->destroyRenderPass(renderPass);
-
         for (auto imageView : swapChainImageViews) {
             device->destroyImageView(imageView);
         }
@@ -248,6 +246,7 @@ private:
 
         device->destroyPipeline(graphicsPipeline);
         device->destroyPipelineLayout(pipelineLayout);
+        device->destroyRenderPass(renderPass);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
             device->destroyBuffer(uniformBuffers[i]);
@@ -287,6 +286,7 @@ private:
 
     void recreateSwapChain() {
         int width = 0, height = 0;
+		glfwGetFramebufferSize(window, &width, &height);
         while (width == 0 || height == 0) {
             glfwGetFramebufferSize(window, &width, &height);
             glfwWaitEvents();
@@ -298,7 +298,6 @@ private:
 
         createSwapChain();
         createImageViews();
-        createRenderPass();
         createDepthResources();
         createFramebuffers();
     }
@@ -937,8 +936,6 @@ private:
     void renderFrame() {
         (void) device->waitForFences(1, &inFlightFences[currentFrame], VK_TRUE, std::numeric_limits<uint64_t>::max());
 
-        updateUniformBuffer(currentFrame);
-
         uint32_t imageIndex;
         try {
             vk::ResultValue result = device->acquireNextImageKHR(swapChain, std::numeric_limits<uint64_t>::max(),
@@ -951,6 +948,12 @@ private:
             throw std::runtime_error("failed to acquire swap chain image!");
         }
 
+        (void) device->resetFences(1, &inFlightFences[currentFrame]);
+
+        updateUniformBuffer(currentFrame);
+
+        recordCommandBuffer(imageIndex);
+
         vk::SubmitInfo submitInfo = {};
 
         vk::Semaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
@@ -959,15 +962,12 @@ private:
         submitInfo.pWaitSemaphores = waitSemaphores;
         submitInfo.pWaitDstStageMask = waitStages;
 
-        recordCommandBuffer(imageIndex);
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
 
         vk::Semaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
-
-        (void) device->resetFences(1, &inFlightFences[currentFrame]);
 
         try {
             graphicsQueue.submit(submitInfo, inFlightFences[currentFrame]);
