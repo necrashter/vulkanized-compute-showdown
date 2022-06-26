@@ -16,7 +16,7 @@ const std::vector<const char*> validationLayers = {
 };
 
 
-bool checkValidationLayerSupport() {
+inline bool checkValidationLayerSupport() {
     auto availableLayers = vk::enumerateInstanceLayerProperties();
     for (const char* layerName : validationLayers) {
         bool layerFound = false;
@@ -37,7 +37,7 @@ bool checkValidationLayerSupport() {
 }
 
 
-std::vector<char> readBinaryFile(const std::string& filename) {
+inline std::vector<char> readBinaryFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
     if (!file.is_open()) {
@@ -392,6 +392,18 @@ public:
         graphicsQueue.waitIdle();
 
         device->freeCommandBuffers(commandPool, commandBuffer);
+    }
+    
+    vk::UniqueShaderModule createShaderModule(const std::vector<char>& code) {
+        try {
+            return device->createShaderModuleUnique({
+                vk::ShaderModuleCreateFlags(),
+                code.size(), 
+                reinterpret_cast<const uint32_t*>(code.data())
+            });
+        } catch (vk::SystemError const &err) {
+            throw std::runtime_error("failed to create shader module!");
+        }
     }
 };
 

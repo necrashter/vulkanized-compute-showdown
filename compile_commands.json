@@ -6,42 +6,42 @@
 },
 {
   "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin/libs/imgui",
-  "command": "/usr/bin/c++    -Wall -g   -std=gnu++17 -o CMakeFiles/imgui.dir/imgui.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui.cpp",
+  "command": "/usr/bin/c++    -Wall -g   -O2 -std=gnu++17 -o CMakeFiles/imgui.dir/imgui.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui.cpp",
   "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui.cpp"
 },
 {
   "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin/libs/imgui",
-  "command": "/usr/bin/c++    -Wall -g   -std=gnu++17 -o CMakeFiles/imgui.dir/imgui_demo.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_demo.cpp",
+  "command": "/usr/bin/c++    -Wall -g   -O2 -std=gnu++17 -o CMakeFiles/imgui.dir/imgui_demo.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_demo.cpp",
   "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_demo.cpp"
 },
 {
   "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin/libs/imgui",
-  "command": "/usr/bin/c++    -Wall -g   -std=gnu++17 -o CMakeFiles/imgui.dir/imgui_draw.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_draw.cpp",
+  "command": "/usr/bin/c++    -Wall -g   -O2 -std=gnu++17 -o CMakeFiles/imgui.dir/imgui_draw.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_draw.cpp",
   "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_draw.cpp"
 },
 {
   "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin/libs/imgui",
-  "command": "/usr/bin/c++    -Wall -g   -std=gnu++17 -o CMakeFiles/imgui.dir/imgui_impl_glfw.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_impl_glfw.cpp",
+  "command": "/usr/bin/c++    -Wall -g   -O2 -std=gnu++17 -o CMakeFiles/imgui.dir/imgui_impl_glfw.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_impl_glfw.cpp",
   "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_impl_glfw.cpp"
 },
 {
   "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin/libs/imgui",
-  "command": "/usr/bin/c++    -Wall -g   -std=gnu++17 -o CMakeFiles/imgui.dir/imgui_impl_vulkan.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_impl_vulkan.cpp",
+  "command": "/usr/bin/c++    -Wall -g   -O2 -std=gnu++17 -o CMakeFiles/imgui.dir/imgui_impl_vulkan.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_impl_vulkan.cpp",
   "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_impl_vulkan.cpp"
 },
 {
   "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin/libs/imgui",
-  "command": "/usr/bin/c++    -Wall -g   -std=gnu++17 -o CMakeFiles/imgui.dir/imgui_tables.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_tables.cpp",
+  "command": "/usr/bin/c++    -Wall -g   -O2 -std=gnu++17 -o CMakeFiles/imgui.dir/imgui_tables.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_tables.cpp",
   "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_tables.cpp"
 },
 {
   "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin/libs/imgui",
-  "command": "/usr/bin/c++    -Wall -g   -std=gnu++17 -o CMakeFiles/imgui.dir/imgui_widgets.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_widgets.cpp",
+  "command": "/usr/bin/c++    -Wall -g   -O2 -std=gnu++17 -o CMakeFiles/imgui.dir/imgui_widgets.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_widgets.cpp",
   "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui/imgui_widgets.cpp"
 },
 {
   "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin/libs/tinygltf",
-  "command": "/usr/bin/c++  -DUSE_IMGUI  -Wall -g   -std=gnu++17 -o CMakeFiles/tiny_gltf.dir/tiny_gltf.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf/tiny_gltf.cpp",
+  "command": "/usr/bin/c++  -DUSE_IMGUI  -Wall -g   -O2 -std=gnu++17 -o CMakeFiles/tiny_gltf.dir/tiny_gltf.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf/tiny_gltf.cpp",
   "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf/tiny_gltf.cpp"
 }
 ]

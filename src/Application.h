@@ -31,8 +31,8 @@
 #endif
 
 
-const int WIDTH = 800;
-const int HEIGHT = 600;
+const int WIDTH = 1280;
+const int HEIGHT = 720;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -50,22 +50,9 @@ const bool enableValidationLayers = true;
 #endif
 
 
-VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pCallback) {
-    auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-    if (func != nullptr) {
-        return func(instance, pCreateInfo, pAllocator, pCallback);
-    }
-    else {
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
-    }
-}
+VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pCallback);
 
-void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT callback, const VkAllocationCallbacks* pAllocator) {
-    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
-    if (func != nullptr) {
-        func(instance, callback, pAllocator);
-    }
-}
+void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT callback, const VkAllocationCallbacks* pAllocator);
 
 
 struct QueueFamilyIndices {
@@ -90,14 +77,55 @@ struct UniformBufferObject {
 };
 
 
+class VulkanBaseApp;
+
+class AppScreen {
+public:
+    VulkanBaseApp* const app;
+
+    AppScreen(VulkanBaseApp* app): app(app) {}
+
+    // Record render commands that will be submitted to graphics queue
+    virtual void recordRenderCommands(vk::CommandBuffer commandBuffer, uint32_t index) = 0;
+
+    // Called before graphics commands are submitted.
+    virtual void preGraphicsSubmit(uint32_t index) = 0;
+
+    virtual ~AppScreen() {}
+};
 
 
-class Application : public VulkanContext {
-private:
+extern const std::vector<std::pair<std::string, std::function<AppScreen*(VulkanBaseApp*)>>>
+screenCreators;
+
+
+class VulkanBaseApp : public VulkanContext {
+public:
     GLFWwindow* window;
+    float time;
+    int framesPerSecond = 0;
 
+    // Currently active screen
+    AppScreen* screen = nullptr;
+
+    size_t currentFrame = 0;
+    vk::Extent2D swapChainExtent;
+
+    vk::RenderPass renderPass;
+
+    std::vector<vk::CommandBuffer, std::allocator<vk::CommandBuffer>> commandBuffers;
+
+    std::vector<vk::Semaphore> imageAvailableSemaphores;
+    std::vector<vk::Semaphore> renderFinishedSemaphores;
+    std::vector<vk::Fence> inFlightFences;
+
+private:
 #ifdef USE_IMGUI
     ImguiOverlay imguiOverlay;
+
+    bool imguiShowPerformance = false;
+
+    void drawImgui();
 #endif
 
     vk::Queue presentQueue;
@@ -108,7 +136,6 @@ private:
     vk::SwapchainKHR swapChain;
     std::vector<vk::Image> swapChainImages;
     vk::Format swapChainImageFormat;
-    vk::Extent2D swapChainExtent;
     std::vector<vk::ImageView> swapChainImageViews;
     std::vector<vk::Framebuffer> swapChainFramebuffers;
 
@@ -117,31 +144,9 @@ private:
     vk::DeviceMemory depthImageMemory;
     vk::ImageView depthImageView;
 
-    vk::RenderPass renderPass;
-    struct {
-        vk::DescriptorSetLayout perFrame;
-        vk::DescriptorSetLayout perMaterial;
-    } descriptorSetLayouts;
-    vk::PipelineLayout pipelineLayout;
-    vk::Pipeline graphicsPipeline;
-
-    vk::DescriptorPool descriptorPool;
-    std::vector<vk::DescriptorSet> descriptorSets;
-
-    std::vector<vk::Buffer> uniformBuffers;
-    std::vector<vk::DeviceMemory> uniformBuffersMemory;
-
-    std::vector<vk::CommandBuffer, std::allocator<vk::CommandBuffer>> commandBuffers;
-
-    std::vector<vk::Semaphore> imageAvailableSemaphores;
-    std::vector<vk::Semaphore> renderFinishedSemaphores;
-    std::vector<vk::Fence> inFlightFences;
-    size_t currentFrame = 0;
-
-    Model model;
-
     bool framebufferResized = false;
 
+protected:
     void initWindow() {
         glfwInit();
 
@@ -153,7 +158,7 @@ private:
     }
 
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-        auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
+        auto app = reinterpret_cast<VulkanBaseApp*>(glfwGetWindowUserPointer(window));
         app->framebufferResized = true;
     }
 
@@ -174,20 +179,12 @@ private:
         createSwapChain();
         createImageViews();
         createRenderPass();
-        createDescriptorSetLayout();
-        createGraphicsPipeline();
         createCommandPool();
 
         createDepthResources();
-
         // Create frame buffers (requires depthImageView to be ready)
         createFramebuffers();
 
-        model.loadFile("../assets/FlightHelmet/FlightHelmet.gltf");
-
-        createBuffers();
-        createDescriptorPool();
-        createDescriptorSets();
         createCommandBuffers();
         createSyncObjects();
 
@@ -210,11 +207,27 @@ private:
     }
 
     void mainLoop() {
+        static auto startTime = std::chrono::high_resolution_clock::now();
+        static auto lastSecond = startTime;
+        static int frames = 0;
+
         while (!glfwWindowShouldClose(window)) {
+            auto currentTime = std::chrono::high_resolution_clock::now();
+            time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+            ++frames;
+            if (std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastSecond).count() >= 1.0) {
+                lastSecond = std::chrono::high_resolution_clock::now();
+                framesPerSecond = frames;
+                frames = 0;
+            }
+
             glfwPollEvents();
+
 #ifdef USE_IMGUI
             imguiOverlay.newFrame();
-            ImGui::ShowDemoWindow();
+
+            drawImgui();
+
             ImGui::Render();
 #endif
             renderFrame();
@@ -237,56 +250,10 @@ private:
         device->destroySwapchainKHR(swapChain);
     }
 
-    void cleanup() {
-        device->waitIdle();
-
-        // NOTE: instance destruction is handled by UniqueInstance, same for device
-
-        cleanupSwapChain();
-
-        device->destroyPipeline(graphicsPipeline);
-        device->destroyPipelineLayout(pipelineLayout);
-        device->destroyRenderPass(renderPass);
-
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            device->destroyBuffer(uniformBuffers[i]);
-            device->freeMemory(uniformBuffersMemory[i]);
-        }
-
-        // DescriptorSets are removed automatically with descriptorPool
-        device->destroyDescriptorPool(descriptorPool);
-        device->destroyDescriptorSetLayout(descriptorSetLayouts.perFrame);
-        device->destroyDescriptorSetLayout(descriptorSetLayouts.perMaterial);
-
-        model.cleanup();
-
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            device->destroySemaphore(renderFinishedSemaphores[i]);
-            device->destroySemaphore(imageAvailableSemaphores[i]);
-            device->destroyFence(inFlightFences[i]);
-        }
-
-        device->destroyCommandPool(commandPool);
-
-#ifdef USE_IMGUI
-        imguiOverlay.cleanup();
-#endif
-
-        // surface is created by glfw, therefore not using a Unique handle
-        instance->destroySurfaceKHR(surface);
-
-        if (enableValidationLayers) {
-            DestroyDebugUtilsMessengerEXT(*instance, callback, nullptr);
-        }
-
-        glfwDestroyWindow(window);
-
-        glfwTerminate();
-    }
 
     void recreateSwapChain() {
         int width = 0, height = 0;
-		glfwGetFramebufferSize(window, &width, &height);
+        glfwGetFramebufferSize(window, &width, &height);
         while (width == 0 || height == 0) {
             glfwGetFramebufferSize(window, &width, &height);
             glfwWaitEvents();
@@ -310,7 +277,7 @@ private:
         auto appInfo = vk::ApplicationInfo(
             "Hello Triangle",
             VK_MAKE_VERSION(1, 0, 0),
-            "No Engine",
+            "-",
             VK_MAKE_VERSION(1, 0, 0),
             VK_API_VERSION_1_0
         );
@@ -426,71 +393,6 @@ private:
 
         graphicsQueue = device->getQueue(indices.graphicsFamily.value(), 0);
         presentQueue = device->getQueue(indices.presentFamily.value(), 0);
-    }
-
-    /*
-       Descriptor
-   */
-
-    void createDescriptorSetLayout() {
-        vk::DescriptorSetLayoutBinding uboBinding(
-                0, vk::DescriptorType::eUniformBuffer, 1,
-                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-                nullptr);
-
-        try {
-            descriptorSetLayouts.perFrame = device->createDescriptorSetLayout({{}, 1, &uboBinding});
-            descriptorSetLayouts.perMaterial = model.createMaterialDescriptorSetLayout();
-        } catch (vk::SystemError const &err) {
-            throw std::runtime_error("failed to create descriptor set layout!");
-        }
-    }
-
-    void createDescriptorPool() {
-        size_t materialCount = model.materials.size();
-        std::array<vk::DescriptorPoolSize, 2> poolSizes = {
-            // UBO
-            vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT),
-            // Sampler
-            vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, materialCount),
-        };
-        vk::DescriptorPoolCreateInfo poolCreateInfo({},
-                MAX_FRAMES_IN_FLIGHT + materialCount,
-                poolSizes.size(), poolSizes.data());
-        try {
-            descriptorPool = device->createDescriptorPool(poolCreateInfo);
-        } catch (vk::SystemError const &err) {
-            throw std::runtime_error("failed to create descriptor pool!");
-        }
-    }
-
-    void createDescriptorSets() {
-        try {
-            std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayouts.perFrame);
-            descriptorSets = device->allocateDescriptorSets(vk::DescriptorSetAllocateInfo(
-                        descriptorPool,
-                        static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
-                        layouts.data()));
-        } catch (vk::SystemError const &err) {
-            throw std::runtime_error("failed to allocate descriptor sets!");
-        }
-
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            vk::DescriptorBufferInfo bufferInfo(uniformBuffers[i], 0, sizeof(UniformBufferObject));
-
-            std::array<vk::WriteDescriptorSet, 1> descriptorWrites = {
-                // UBO
-                vk::WriteDescriptorSet(
-                        descriptorSets[i], 0, 0, 1, vk::DescriptorType::eUniformBuffer,
-                        nullptr, // image info
-                        &bufferInfo
-                        ),
-            };
-            device->updateDescriptorSets(
-                    descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
-        }
-
-        model.createMaterialDescriptorSets(descriptorPool, descriptorSetLayouts.perMaterial);
     }
 
     /*
@@ -619,129 +521,6 @@ private:
         }
     }
 
-    void createGraphicsPipeline() {
-        auto vertShaderCode = readBinaryFile("shaders/shader.vert.spv");
-        auto fragShaderCode = readBinaryFile("shaders/shader.frag.spv");
-
-        auto vertShaderModule = createShaderModule(vertShaderCode);
-        auto fragShaderModule = createShaderModule(fragShaderCode);
-
-        vk::PipelineShaderStageCreateInfo shaderStages[] = { 
-            {
-                vk::PipelineShaderStageCreateFlags(),
-                vk::ShaderStageFlagBits::eVertex,
-                *vertShaderModule,
-                "main"
-            }, 
-            {
-                vk::PipelineShaderStageCreateFlags(),
-                vk::ShaderStageFlagBits::eFragment,
-                *fragShaderModule,
-                "main"
-            } 
-        };
-
-        vk::PipelineVertexInputStateCreateInfo vertexInputInfo = {};
-        vertexInputInfo.vertexBindingDescriptionCount = 0;
-        vertexInputInfo.vertexAttributeDescriptionCount = 0;
-
-        auto bindingDescription = Model::vertexBindingDescription;
-        auto attributeDescriptions = Model::vertexAttributeDescription;
-
-        vertexInputInfo.vertexBindingDescriptionCount = 1;
-        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-        vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-        vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
-
-        vk::PipelineInputAssemblyStateCreateInfo inputAssembly = {};
-        inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
-        inputAssembly.primitiveRestartEnable = VK_FALSE;
-
-        vk::PipelineViewportStateCreateInfo viewportState(
-                {},
-                1, nullptr,
-                1, nullptr // viewport and scissors are dynamic, hence nullptr (ignored)
-                );
-
-        vk::PipelineRasterizationStateCreateInfo rasterizer = {};
-        rasterizer.depthClampEnable = VK_FALSE;
-        rasterizer.rasterizerDiscardEnable = VK_FALSE;
-        rasterizer.polygonMode = vk::PolygonMode::eFill;
-        rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode = vk::CullModeFlagBits::eBack;
-        rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
-        rasterizer.depthBiasEnable = VK_FALSE;
-
-        vk::PipelineMultisampleStateCreateInfo multisampling = {};
-        multisampling.sampleShadingEnable = VK_FALSE;
-        multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
-
-        vk::PipelineColorBlendAttachmentState colorBlendAttachment = {};
-        colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-        colorBlendAttachment.blendEnable = VK_FALSE;
-
-        vk::PipelineColorBlendStateCreateInfo colorBlending = {};
-        colorBlending.logicOpEnable = VK_FALSE;
-        colorBlending.logicOp = vk::LogicOp::eCopy;
-        colorBlending.attachmentCount = 1;
-        colorBlending.pAttachments = &colorBlendAttachment;
-        colorBlending.blendConstants[0] = 0.0f;
-        colorBlending.blendConstants[1] = 0.0f;
-        colorBlending.blendConstants[2] = 0.0f;
-        colorBlending.blendConstants[3] = 0.0f;
-
-        std::array<vk::DescriptorSetLayout, 2> setLayouts = {
-            descriptorSetLayouts.perFrame,
-            descriptorSetLayouts.perMaterial,
-        };
-        // Push constants information
-        std::array<vk::PushConstantRange, 1> pushConstants = {
-            vk::PushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4)),
-        };
-        vk::PipelineLayoutCreateInfo pipelineLayoutInfo({},
-                setLayouts.size(), setLayouts.data(),
-                pushConstants.size(), pushConstants.data()
-                );
-
-        try {
-            pipelineLayout = device->createPipelineLayout(pipelineLayoutInfo);
-        } catch (vk::SystemError const &err) {
-            throw std::runtime_error("failed to create pipeline layout!");
-        }
-
-        // Depth testing
-        vk::PipelineDepthStencilStateCreateInfo depthStencil({}, true, true, vk::CompareOp::eLess, false, false);
-
-        vk::GraphicsPipelineCreateInfo pipelineInfo = {};
-        pipelineInfo.stageCount = 2;
-        pipelineInfo.pStages = shaderStages;
-        pipelineInfo.pVertexInputState = &vertexInputInfo;
-        pipelineInfo.pInputAssemblyState = &inputAssembly;
-        pipelineInfo.pViewportState = &viewportState;
-        pipelineInfo.pRasterizationState = &rasterizer;
-        pipelineInfo.pMultisampleState = &multisampling;
-        pipelineInfo.pColorBlendState = &colorBlending;
-        pipelineInfo.layout = pipelineLayout;
-        pipelineInfo.renderPass = renderPass;
-        pipelineInfo.subpass = 0;
-        pipelineInfo.basePipelineHandle = nullptr;
-        pipelineInfo.pDepthStencilState = &depthStencil;
-
-        std::array<vk::DynamicState, 2> dynamicStates = {
-            vk::DynamicState::eViewport,
-            vk::DynamicState::eScissor,
-        };
-        vk::PipelineDynamicStateCreateInfo dynamicState({}, dynamicStates.size(), dynamicStates.data());
-        pipelineInfo.pDynamicState = &dynamicState;
-
-        try {
-            graphicsPipeline = device->createGraphicsPipeline(nullptr, pipelineInfo).value;
-        }
-        catch (vk::SystemError const &err) {
-            throw std::runtime_error("failed to create graphics pipeline!");
-        }
-    }   
-
     void createDepthResources() {
         createImage(
                 swapChainExtent.width,
@@ -800,24 +579,6 @@ private:
         }
     }
 
-    void createBuffers() {
-        model.createBuffers();
-
-        // Uniform buffers
-        vk::DeviceSize uniformBufferSize = sizeof(UniformBufferObject);
-        uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-        uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
-
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            createBuffer(
-                    uniformBufferSize,
-                    vk::BufferUsageFlagBits::eUniformBuffer,
-                    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                    uniformBuffers[i], uniformBuffersMemory[i]
-                    );
-        }
-    }
-
     void createCommandBuffers() {
         commandBuffers.resize(swapChainFramebuffers.size());
 
@@ -861,8 +622,6 @@ private:
 
         commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
         {
-            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
-
             vk::Viewport viewport(
                     0.0f, 0.0f, 
                     (float)swapChainExtent.width, (float)swapChainExtent.height,
@@ -876,11 +635,9 @@ private:
             commandBuffer.setViewport(0, 1, &viewport);
             commandBuffer.setScissor(0, 1, &scissor);
 
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
-
-            model.render(commandBuffer, pipelineLayout,
-                    glm::scale(glm::mat4(1.0f), glm::vec3(3.0f))
-                    );
+            if (screen) {
+                screen->recordRenderCommands(commandBuffer, currentFrame);
+            }
 
 #ifdef USE_IMGUI
             imguiOverlay.render(commandBuffer);
@@ -911,28 +668,6 @@ private:
         }
     }
 
-    void updateUniformBuffer(uint32_t index) {
-        static auto startTime = std::chrono::high_resolution_clock::now();
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-
-        glm::vec3 cameraPosition = glm::vec3(
-            glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), WORLD_UP) * glm::vec4(3.0f, 0.0f, 0.0f, 1.0f)
-                );
-
-        UniformBufferObject ubo {
-            glm::lookAt(cameraPosition, glm::vec3(0.0f, 0.0f, 0.0f), WORLD_UP),
-            glm::perspective(glm::radians(60.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f),
-            cameraPosition
-        };
-        // Y coordinate is inverted
-        ubo.proj[1][1] *= -1;
-
-        void* data = device->mapMemory(uniformBuffersMemory[index], 0, sizeof(ubo));
-        memcpy(data, &ubo, sizeof(ubo));
-        device->unmapMemory(uniformBuffersMemory[index]);
-    }
-
     void renderFrame() {
         (void) device->waitForFences(1, &inFlightFences[currentFrame], VK_TRUE, std::numeric_limits<uint64_t>::max());
 
@@ -950,24 +685,20 @@ private:
 
         (void) device->resetFences(1, &inFlightFences[currentFrame]);
 
-        updateUniformBuffer(currentFrame);
-
         recordCommandBuffer(imageIndex);
 
-        vk::SubmitInfo submitInfo = {};
+        if (screen) {
+            screen->preGraphicsSubmit(currentFrame);
+        }
 
         vk::Semaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
         vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-        submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = waitSemaphores;
-        submitInfo.pWaitDstStageMask = waitStages;
-
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
-
         vk::Semaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
-        submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = signalSemaphores;
+
+        vk::SubmitInfo submitInfo(
+                std::size(waitSemaphores), waitSemaphores, waitStages,
+                1, &commandBuffers[imageIndex],
+                std::size(signalSemaphores), signalSemaphores);
 
         try {
             graphicsQueue.submit(submitInfo, inFlightFences[currentFrame]);
@@ -975,14 +706,9 @@ private:
             throw std::runtime_error("failed to submit draw command buffer!");
         }
 
-        vk::PresentInfoKHR presentInfo = {};
-        presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = signalSemaphores;
-
-        vk::SwapchainKHR swapChains[] = { swapChain };
-        presentInfo.swapchainCount = 1;
-        presentInfo.pSwapchains = swapChains;
-        presentInfo.pImageIndices = &imageIndex;
+        vk::PresentInfoKHR presentInfo(
+                1, &renderFinishedSemaphores[currentFrame], // wait sem
+                1, &swapChain, &imageIndex);
 
         vk::Result resultPresent;
         try {
@@ -1001,18 +727,6 @@ private:
 
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }   
-
-    vk::UniqueShaderModule createShaderModule(const std::vector<char>& code) {
-        try {
-            return device->createShaderModuleUnique({
-                vk::ShaderModuleCreateFlags(),
-                code.size(), 
-                reinterpret_cast<const uint32_t*>(code.data())
-            });
-        } catch (vk::SystemError const &err) {
-            throw std::runtime_error("failed to create shader module!");
-        }
-    }
 
     vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats) {
         if (availableFormats.size() == 1 && availableFormats[0].format == vk::Format::eUndefined) {
@@ -1141,11 +855,10 @@ private:
     }
 
 public:
-    Application():
+    VulkanBaseApp():
 #ifdef USE_IMGUI
-        imguiOverlay(this),
+        imguiOverlay(this)
 #endif
-        model(this)
     {
         initWindow();
         initVulkan();
@@ -1155,9 +868,339 @@ public:
         mainLoop();
     }
 
-	~Application() {
-        cleanup();
+    void removeScreen() {
+        device->waitIdle();
+        if (screen) {
+            delete screen;
+            screen = nullptr;
+        }
+    }
+
+    virtual ~VulkanBaseApp() {
+        // cleanup();
+
+        // Called by removeScreen
+        // device->waitIdle();
+        removeScreen();
+
+        // NOTE: instance destruction is handled by UniqueInstance, same for device
+
+        cleanupSwapChain();
+
+        device->destroyRenderPass(renderPass);
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            device->destroySemaphore(renderFinishedSemaphores[i]);
+            device->destroySemaphore(imageAvailableSemaphores[i]);
+            device->destroyFence(inFlightFences[i]);
+        }
+
+        device->destroyCommandPool(commandPool);
+
+#ifdef USE_IMGUI
+        imguiOverlay.cleanup();
+#endif
+
+        // surface is created by glfw, therefore not using a Unique handle
+        instance->destroySurfaceKHR(surface);
+
+        if (enableValidationLayers) {
+            DestroyDebugUtilsMessengerEXT(*instance, callback, nullptr);
+        }
+
+        glfwDestroyWindow(window);
+
+        glfwTerminate();
 	}
+};
+
+
+
+class SampleScreen : public AppScreen {
+private:
+    Model model;
+
+    struct {
+        vk::DescriptorSetLayout perFrame;
+        vk::DescriptorSetLayout perMaterial;
+    } descriptorSetLayouts;
+    vk::PipelineLayout pipelineLayout;
+    vk::Pipeline graphicsPipeline;
+
+    vk::DescriptorPool descriptorPool;
+    std::vector<vk::DescriptorSet> descriptorSets;
+
+    std::vector<vk::Buffer> uniformBuffers;
+    std::vector<vk::DeviceMemory> uniformBuffersMemory;
+
+public:
+    SampleScreen(VulkanBaseApp* app):
+        AppScreen(app),
+        model(app)
+    {
+        model.loadFile("../assets/FlightHelmet/FlightHelmet.gltf");
+        model.createBuffers();
+        createBuffers();
+
+        createDescriptorPool();
+        createDescriptorSetLayout();
+        createDescriptorSets();
+        createGraphicsPipeline();
+    }
+
+    void createGraphicsPipeline() {
+        auto vertShaderCode = readBinaryFile("shaders/shader.vert.spv");
+        auto fragShaderCode = readBinaryFile("shaders/shader.frag.spv");
+
+        auto vertShaderModule = app->createShaderModule(vertShaderCode);
+        auto fragShaderModule = app->createShaderModule(fragShaderCode);
+
+        vk::PipelineShaderStageCreateInfo shaderStages[] = { 
+            {
+                vk::PipelineShaderStageCreateFlags(),
+                vk::ShaderStageFlagBits::eVertex,
+                *vertShaderModule,
+                "main"
+            }, 
+            {
+                vk::PipelineShaderStageCreateFlags(),
+                vk::ShaderStageFlagBits::eFragment,
+                *fragShaderModule,
+                "main"
+            } 
+        };
+
+        vk::PipelineVertexInputStateCreateInfo vertexInputInfo = {};
+        vertexInputInfo.vertexBindingDescriptionCount = 0;
+        vertexInputInfo.vertexAttributeDescriptionCount = 0;
+
+        auto bindingDescription = Model::vertexBindingDescription;
+        auto attributeDescriptions = Model::vertexAttributeDescription;
+
+        vertexInputInfo.vertexBindingDescriptionCount = 1;
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+        vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+        vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
+        vk::PipelineInputAssemblyStateCreateInfo inputAssembly = {};
+        inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
+        inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+        vk::PipelineViewportStateCreateInfo viewportState(
+                {},
+                1, nullptr,
+                1, nullptr // viewport and scissors are dynamic, hence nullptr (ignored)
+                );
+
+        vk::PipelineRasterizationStateCreateInfo rasterizer = {};
+        rasterizer.depthClampEnable = VK_FALSE;
+        rasterizer.rasterizerDiscardEnable = VK_FALSE;
+        rasterizer.polygonMode = vk::PolygonMode::eFill;
+        rasterizer.lineWidth = 1.0f;
+        rasterizer.cullMode = vk::CullModeFlagBits::eBack;
+        rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
+        rasterizer.depthBiasEnable = VK_FALSE;
+
+        vk::PipelineMultisampleStateCreateInfo multisampling = {};
+        multisampling.sampleShadingEnable = VK_FALSE;
+        multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
+
+        vk::PipelineColorBlendAttachmentState colorBlendAttachment = {};
+        colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+        colorBlendAttachment.blendEnable = VK_FALSE;
+
+        vk::PipelineColorBlendStateCreateInfo colorBlending = {};
+        colorBlending.logicOpEnable = VK_FALSE;
+        colorBlending.logicOp = vk::LogicOp::eCopy;
+        colorBlending.attachmentCount = 1;
+        colorBlending.pAttachments = &colorBlendAttachment;
+        colorBlending.blendConstants[0] = 0.0f;
+        colorBlending.blendConstants[1] = 0.0f;
+        colorBlending.blendConstants[2] = 0.0f;
+        colorBlending.blendConstants[3] = 0.0f;
+
+        std::array<vk::DescriptorSetLayout, 2> setLayouts = {
+            descriptorSetLayouts.perFrame,
+            descriptorSetLayouts.perMaterial,
+        };
+        // Push constants information
+        std::array<vk::PushConstantRange, 1> pushConstants = {
+            vk::PushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4)),
+        };
+        vk::PipelineLayoutCreateInfo pipelineLayoutInfo({},
+                setLayouts.size(), setLayouts.data(),
+                pushConstants.size(), pushConstants.data()
+                );
+
+        try {
+            pipelineLayout = app->device->createPipelineLayout(pipelineLayoutInfo);
+        } catch (vk::SystemError const &err) {
+            throw std::runtime_error("failed to create pipeline layout!");
+        }
+
+        // Depth testing
+        vk::PipelineDepthStencilStateCreateInfo depthStencil({}, true, true, vk::CompareOp::eLess, false, false);
+
+        vk::GraphicsPipelineCreateInfo pipelineInfo = {};
+        pipelineInfo.stageCount = 2;
+        pipelineInfo.pStages = shaderStages;
+        pipelineInfo.pVertexInputState = &vertexInputInfo;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pColorBlendState = &colorBlending;
+        pipelineInfo.layout = pipelineLayout;
+        pipelineInfo.renderPass = app->renderPass;
+        pipelineInfo.subpass = 0;
+        pipelineInfo.basePipelineHandle = nullptr;
+        pipelineInfo.pDepthStencilState = &depthStencil;
+
+        std::array<vk::DynamicState, 2> dynamicStates = {
+            vk::DynamicState::eViewport,
+            vk::DynamicState::eScissor,
+        };
+        vk::PipelineDynamicStateCreateInfo dynamicState({}, dynamicStates.size(), dynamicStates.data());
+        pipelineInfo.pDynamicState = &dynamicState;
+
+        try {
+            graphicsPipeline = app->device->createGraphicsPipeline(nullptr, pipelineInfo).value;
+        }
+        catch (vk::SystemError const &err) {
+            throw std::runtime_error("failed to create graphics pipeline!");
+        }
+    }   
+
+    /*
+       Descriptor
+   */
+
+    void createDescriptorSetLayout() {
+        vk::DescriptorSetLayoutBinding uboBinding(
+                0, vk::DescriptorType::eUniformBuffer, 1,
+                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+                nullptr);
+
+        try {
+            descriptorSetLayouts.perFrame = app->device->createDescriptorSetLayout({{}, 1, &uboBinding});
+            descriptorSetLayouts.perMaterial = model.createMaterialDescriptorSetLayout();
+        } catch (vk::SystemError const &err) {
+            throw std::runtime_error("failed to create descriptor set layout!");
+        }
+    }
+
+    void createBuffers() {
+        // Uniform buffers
+        vk::DeviceSize uniformBufferSize = sizeof(UniformBufferObject);
+        uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+        uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            app->createBuffer(
+                    uniformBufferSize,
+                    vk::BufferUsageFlagBits::eUniformBuffer,
+                    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                    uniformBuffers[i], uniformBuffersMemory[i]
+                    );
+        }
+    }
+
+    void createDescriptorPool() {
+        size_t materialCount = model.materials.size();
+        std::array<vk::DescriptorPoolSize, 2> poolSizes = {
+            // UBO
+            vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT),
+            // Sampler
+            vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, materialCount),
+        };
+        vk::DescriptorPoolCreateInfo poolCreateInfo({},
+                MAX_FRAMES_IN_FLIGHT + materialCount,
+                poolSizes.size(), poolSizes.data());
+        try {
+            descriptorPool = app->device->createDescriptorPool(poolCreateInfo);
+        } catch (vk::SystemError const &err) {
+            throw std::runtime_error("failed to create descriptor pool!");
+        }
+    }
+
+    void createDescriptorSets() {
+        try {
+            std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayouts.perFrame);
+            descriptorSets = app->device->allocateDescriptorSets(vk::DescriptorSetAllocateInfo(
+                        descriptorPool,
+                        static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+                        layouts.data()));
+        } catch (vk::SystemError const &err) {
+            throw std::runtime_error("failed to allocate descriptor sets!");
+        }
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            vk::DescriptorBufferInfo bufferInfo(uniformBuffers[i], 0, sizeof(UniformBufferObject));
+
+            std::array<vk::WriteDescriptorSet, 1> descriptorWrites = {
+                // UBO
+                vk::WriteDescriptorSet(
+                        descriptorSets[i], 0, 0, 1, vk::DescriptorType::eUniformBuffer,
+                        nullptr, // image info
+                        &bufferInfo
+                        ),
+            };
+            app->device->updateDescriptorSets(
+                    descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+        }
+
+        model.createMaterialDescriptorSets(descriptorPool, descriptorSetLayouts.perMaterial);
+    }
+
+
+    void updateUniformBuffer(uint32_t index) {
+        glm::vec3 cameraPosition = glm::vec3(
+            glm::rotate(glm::mat4(1.0f), app->time * glm::radians(90.0f), WORLD_UP) * glm::vec4(3.0f, 0.0f, 0.0f, 1.0f)
+                );
+
+        UniformBufferObject ubo {
+            glm::lookAt(cameraPosition, glm::vec3(0.0f, 0.0f, 0.0f), WORLD_UP),
+            glm::perspective(glm::radians(60.0f), app->swapChainExtent.width / (float) app->swapChainExtent.height, 0.1f, 10.0f),
+            cameraPosition
+        };
+        // Y coordinate is inverted
+        ubo.proj[1][1] *= -1;
+
+        void* data = app->device->mapMemory(uniformBuffersMemory[index], 0, sizeof(ubo));
+        memcpy(data, &ubo, sizeof(ubo));
+        app->device->unmapMemory(uniformBuffersMemory[index]);
+    }
+
+    virtual void preGraphicsSubmit(uint32_t index) override {
+        updateUniformBuffer(index);
+    }
+
+
+    virtual void recordRenderCommands(vk::CommandBuffer commandBuffer, uint32_t index) override {
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptorSets[index], 0, nullptr);
+
+        model.render(commandBuffer, pipelineLayout,
+                glm::scale(glm::mat4(1.0f), glm::vec3(3.0f))
+                );
+    }
+
+    virtual ~SampleScreen() {
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            app->device->destroyBuffer(uniformBuffers[i]);
+            app->device->freeMemory(uniformBuffersMemory[i]);
+        }
+
+        app->device->destroyPipeline(graphicsPipeline);
+        app->device->destroyPipelineLayout(pipelineLayout);
+
+        // DescriptorSets are removed automatically with descriptorPool
+        app->device->destroyDescriptorPool(descriptorPool);
+        app->device->destroyDescriptorSetLayout(descriptorSetLayouts.perFrame);
+        app->device->destroyDescriptorSetLayout(descriptorSetLayouts.perMaterial);
+
+        model.cleanup();
+    }
 };
 
 #endif
