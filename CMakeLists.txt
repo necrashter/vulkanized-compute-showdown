@@ -12,19 +12,19 @@ set(CMAKE_CXX_FLAGS "-Wall -g")
 
 
 # COMPILE OPTIONS
-option(USE_MUHLIB "Use muh lib" OFF)
+option(USE_IMGUI "Enable Dear Imgui" ON)
 
 
 #######################################################################
 #                              LIBRARIES                              #
 #######################################################################
 
-if(USE_MUHLIB)
+if(USE_IMGUI)
     # add the MuhLib library
-    add_subdirectory(MuhLib)
-    list(APPEND EXTRA_LIBS MuhLib)
-    list(APPEND EXTRA_INCLUDES "${PROJECT_SOURCE_DIR}/MuhLib")
-    add_compile_definitions(USE_MUHLIB)
+    add_subdirectory(libs/imgui)
+    list(APPEND EXTRA_LIBS imgui)
+    list(APPEND EXTRA_INCLUDES "${PROJECT_SOURCE_DIR}/libs/imgui")
+    add_compile_definitions(USE_IMGUI)
 endif()
 
 # Tiny GLTF
@@ -32,8 +32,6 @@ add_subdirectory(libs/tinygltf)
 list(APPEND EXTRA_LIBS tiny_gltf)
 list(APPEND EXTRA_INCLUDES "${PROJECT_SOURCE_DIR}/libs/tinygltf")
 
-# TODO:
-# add_subdirectory(libs)
 
 # Add GLM
 set(glm_DIR libs/glm/cmake/glm)

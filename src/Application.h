@@ -26,6 +26,10 @@
 #include <set>
 #include <chrono>
 
+#ifdef USE_IMGUI
+#include "ImguiOverlay.h"
+#endif
+
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
@@ -91,6 +95,10 @@ struct UniformBufferObject {
 class Application : public VulkanContext {
 private:
     GLFWwindow* window;
+
+#ifdef USE_IMGUI
+    ImguiOverlay imguiOverlay;
+#endif
 
     vk::Queue presentQueue;
 
@@ -182,6 +190,10 @@ private:
         createDescriptorSets();
         createCommandBuffers();
         createSyncObjects();
+
+#ifdef USE_IMGUI
+        imguiOverlay.init(window, renderPass);
+#endif
     }
 
     vk::Format findSupportedFormat(const std::vector<vk::Format>& candidates,
@@ -200,6 +212,11 @@ private:
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
+#ifdef USE_IMGUI
+            imguiOverlay.newFrame();
+            ImGui::ShowDemoWindow();
+            ImGui::Render();
+#endif
             renderFrame();
         }
     }
@@ -213,7 +230,6 @@ private:
             device->destroyFramebuffer(framebuffer);
         }
 
-        device->freeCommandBuffers(commandPool, commandBuffers);
         device->destroyRenderPass(renderPass);
 
         for (auto imageView : swapChainImageViews) {
@@ -253,6 +269,10 @@ private:
 
         device->destroyCommandPool(commandPool);
 
+#ifdef USE_IMGUI
+        imguiOverlay.cleanup();
+#endif
+
         // surface is created by glfw, therefore not using a Unique handle
         instance->destroySurfaceKHR(surface);
 
@@ -281,7 +301,6 @@ private:
         createRenderPass();
         createDepthResources();
         createFramebuffers();
-        createCommandBuffers();
     }
 
     void createInstance() {
@@ -769,8 +788,10 @@ private:
     void createCommandPool() {
         QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
 
-        vk::CommandPoolCreateInfo poolInfo = {};
-        poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+        vk::CommandPoolCreateInfo poolInfo(
+                vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+                queueFamilyIndices.graphicsFamily.value()
+                );
 
         try {
             commandPool = device->createCommandPool(poolInfo);
@@ -811,61 +832,67 @@ private:
         } catch (vk::SystemError const &err) {
             throw std::runtime_error("failed to allocate command buffers!");
         }
+    }
 
-        for (size_t i = 0; i < commandBuffers.size(); ++i) {
-            vk::CommandBufferBeginInfo beginInfo = {};
-            beginInfo.flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse;
+    void recordCommandBuffer(size_t i) {
+        vk::CommandBufferBeginInfo beginInfo = {};
+        beginInfo.flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse;
 
-            try {
-                commandBuffers[i].begin(beginInfo);
-            }
-            catch (vk::SystemError const &err) {
-                throw std::runtime_error("failed to begin recording command buffer!");
-            }
+        try {
+            commandBuffers[i].begin(beginInfo);
+        }
+        catch (vk::SystemError const &err) {
+            throw std::runtime_error("failed to begin recording command buffer!");
+        }
 
-            vk::RenderPassBeginInfo renderPassInfo(
-                    renderPass, 
-                    swapChainFramebuffers[i],
-                    vk::Rect2D({0, 0}, swapChainExtent)
+        vk::RenderPassBeginInfo renderPassInfo(
+                renderPass, 
+                swapChainFramebuffers[i],
+                vk::Rect2D({0, 0}, swapChainExtent)
+                );
+
+        std::array<vk::ClearValue, 2> clearValues {
+            vk::ClearValue(vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f })),
+                vk::ClearValue(vk::ClearDepthStencilValue(1.0f, 0)),
+        };
+        renderPassInfo.clearValueCount = clearValues.size();
+        renderPassInfo.pClearValues = clearValues.data();
+
+        vk::CommandBuffer commandBuffer = commandBuffers[i];
+
+        commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+        {
+            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
+
+            vk::Viewport viewport(
+                    0.0f, 0.0f, 
+                    (float)swapChainExtent.width, (float)swapChainExtent.height,
+                    0.0f, 1.0f);
+
+            vk::Rect2D scissor(
+                    {0, 0}, // Offset
+                    swapChainExtent // extent
                     );
 
-            std::array<vk::ClearValue, 2> clearValues {
-                vk::ClearValue(vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f })),
-                vk::ClearValue(vk::ClearDepthStencilValue(1.0f, 0)),
-            };
-            renderPassInfo.clearValueCount = clearValues.size();
-            renderPassInfo.pClearValues = clearValues.data();
+            commandBuffer.setViewport(0, 1, &viewport);
+            commandBuffer.setScissor(0, 1, &scissor);
 
-            commandBuffers[i].beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
-            {
-                commandBuffers[i].bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
+            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
-                vk::Viewport viewport(
-                        0.0f, 0.0f, 
-                        (float)swapChainExtent.width, (float)swapChainExtent.height,
-                        0.0f, 1.0f);
+            model.render(commandBuffer, pipelineLayout,
+                    glm::scale(glm::mat4(1.0f), glm::vec3(3.0f))
+                    );
 
-                vk::Rect2D scissor(
-                        {0, 0}, // Offset
-                        swapChainExtent // extent
-                        );
+#ifdef USE_IMGUI
+            imguiOverlay.render(commandBuffer);
+#endif
+        }
+        commandBuffer.endRenderPass();
 
-                commandBuffers[i].setViewport(0, 1, &viewport);
-                commandBuffers[i].setScissor(0, 1, &scissor);
-
-                commandBuffers[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
-
-                model.render(commandBuffers[i], pipelineLayout,
-                        glm::scale(glm::mat4(1.0f), glm::vec3(3.0f))
-                        );
-            }
-            commandBuffers[i].endRenderPass();
-
-            try {
-                commandBuffers[i].end();
-            } catch (vk::SystemError const &err) {
-                throw std::runtime_error("failed to record command buffer!");
-            }
+        try {
+            commandBuffer.end();
+        } catch (vk::SystemError const &err) {
+            throw std::runtime_error("failed to record command buffer!");
         }
     }
 
@@ -932,6 +959,7 @@ private:
         submitInfo.pWaitSemaphores = waitSemaphores;
         submitInfo.pWaitDstStageMask = waitStages;
 
+        recordCommandBuffer(imageIndex);
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
 
@@ -1113,7 +1141,12 @@ private:
     }
 
 public:
-    Application(): model(this) {
+    Application():
+#ifdef USE_IMGUI
+        imguiOverlay(this),
+#endif
+        model(this)
+    {
         initWindow();
         initVulkan();
     }
