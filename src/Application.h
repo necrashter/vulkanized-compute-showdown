@@ -214,9 +214,6 @@ private:
         }
 
         device->freeCommandBuffers(commandPool, commandBuffers);
-
-        device->destroyPipeline(graphicsPipeline);
-        device->destroyPipelineLayout(pipelineLayout);
         device->destroyRenderPass(renderPass);
 
         for (auto imageView : swapChainImageViews) {
@@ -232,6 +229,9 @@ private:
         // NOTE: instance destruction is handled by UniqueInstance, same for device
 
         cleanupSwapChain();
+
+        device->destroyPipeline(graphicsPipeline);
+        device->destroyPipelineLayout(pipelineLayout);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
             device->destroyBuffer(uniformBuffers[i]);
@@ -279,7 +279,6 @@ private:
         createSwapChain();
         createImageViews();
         createRenderPass();
-        createGraphicsPipeline();
         createDepthResources();
         createFramebuffers();
         createCommandBuffers();
@@ -640,24 +639,11 @@ private:
         inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
         inputAssembly.primitiveRestartEnable = VK_FALSE;
 
-        vk::Viewport viewport = {};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = (float)swapChainExtent.width;
-        viewport.height = (float)swapChainExtent.height;
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-
-        vk::Rect2D scissor(
-                {0, 0}, // Offset
-                swapChainExtent // extent
+        vk::PipelineViewportStateCreateInfo viewportState(
+                {},
+                1, nullptr,
+                1, nullptr // viewport and scissors are dynamic, hence nullptr (ignored)
                 );
-
-        vk::PipelineViewportStateCreateInfo viewportState = {};
-        viewportState.viewportCount = 1;
-        viewportState.pViewports = &viewport;
-        viewportState.scissorCount = 1;
-        viewportState.pScissors = &scissor;
 
         vk::PipelineRasterizationStateCreateInfo rasterizer = {};
         rasterizer.depthClampEnable = VK_FALSE;
@@ -722,6 +708,13 @@ private:
         pipelineInfo.subpass = 0;
         pipelineInfo.basePipelineHandle = nullptr;
         pipelineInfo.pDepthStencilState = &depthStencil;
+
+        std::array<vk::DynamicState, 2> dynamicStates = {
+            vk::DynamicState::eViewport,
+            vk::DynamicState::eScissor,
+        };
+        vk::PipelineDynamicStateCreateInfo dynamicState({}, dynamicStates.size(), dynamicStates.data());
+        pipelineInfo.pDynamicState = &dynamicState;
 
         try {
             graphicsPipeline = device->createGraphicsPipeline(nullptr, pipelineInfo).value;
@@ -846,6 +839,19 @@ private:
             commandBuffers[i].beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
             {
                 commandBuffers[i].bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
+
+                vk::Viewport viewport(
+                        0.0f, 0.0f, 
+                        (float)swapChainExtent.width, (float)swapChainExtent.height,
+                        0.0f, 1.0f);
+
+                vk::Rect2D scissor(
+                        {0, 0}, // Offset
+                        swapChainExtent // extent
+                        );
+
+                commandBuffers[i].setViewport(0, 1, &viewport);
+                commandBuffers[i].setScissor(0, 1, &scissor);
 
                 commandBuffers[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 

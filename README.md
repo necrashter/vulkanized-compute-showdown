@@ -27,12 +27,12 @@ $ ./App
 
 ## Optimizations
 
-- More efficient swap chain recreation, see vulkan tut comments
-- The actual code on the site does not recreate command buffers with swap chain on resize. And commands are recorded each frame.
-    - Why do I need to recreate command buffers? It crashes otherwise. Maybe just re-record required.
-- _"Using a UBO this way is not the most efficient way to pass frequently changing values to the shader. A more efficient way to pass a small buffer of data to shaders are push constants. We may look at these in a future chapter."_
 - Implement a dedicated transfer queue
 - Optimize one shot commands
+- More efficient swap chain recreation, see vulkan tut comments
+    - Done, not as good as I initially expected, but avoid recompiling shaders
+- _"Using a UBO this way is not the most efficient way to pass frequently changing values to the shader. A more efficient way to pass a small buffer of data to shaders are push constants. We may look at these in a future chapter."_
+    - Push Constants are done as a part of gltf rendering
 
 
 ## VulkanTutorial Conclusion
@@ -42,7 +42,7 @@ Not done from tutorial:
 
 Ideas from conclusion:
 - Push constants
-    - I took a detour and implemented model loading with glTF instead of obj. Push constants can be implemented to pass model matrix for hierarchical rendering.
+    - I took a detour and implemented model loading with glTF instead of obj. Push constants are implemented to pass model matrix for hierarchical rendering.
 - Instanced rendering
 - Dynamic uniforms
 - Separate images and sampler descriptors
