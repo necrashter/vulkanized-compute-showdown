@@ -32,6 +32,8 @@ const int HEIGHT = 600;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
+const glm::vec3 WORLD_UP(0.0f, 1.0f, 0.0f);
+
 const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
@@ -78,9 +80,9 @@ struct SwapChainSupportDetails {
 };
 
 struct UniformBufferObject {
-    alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
+    alignas(16) glm::vec3 cameraPosition;
 };
 
 
@@ -173,7 +175,7 @@ private:
         // Create frame buffers (requires depthImageView to be ready)
         createFramebuffers();
 
-        model.loadFile("../assets/VikingRoom.gltf");
+        model.loadFile("../assets/FlightHelmet/FlightHelmet.gltf");
 
         createBuffers();
         createDescriptorPool();
@@ -414,7 +416,10 @@ private:
    */
 
     void createDescriptorSetLayout() {
-        vk::DescriptorSetLayoutBinding uboBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex, nullptr);
+        vk::DescriptorSetLayoutBinding uboBinding(
+                0, vk::DescriptorType::eUniformBuffer, 1,
+                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+                nullptr);
 
         try {
             descriptorSetLayouts.perFrame = device->createDescriptorSetLayout({{}, 1, &uboBinding});
@@ -681,14 +686,18 @@ private:
         colorBlending.blendConstants[2] = 0.0f;
         colorBlending.blendConstants[3] = 0.0f;
 
-        vk::PipelineLayoutCreateInfo pipelineLayoutInfo = {};
         std::array<vk::DescriptorSetLayout, 2> setLayouts = {
             descriptorSetLayouts.perFrame,
             descriptorSetLayouts.perMaterial,
         };
-        pipelineLayoutInfo.setLayoutCount = setLayouts.size();
-        pipelineLayoutInfo.pSetLayouts = setLayouts.data();
-        pipelineLayoutInfo.pushConstantRangeCount = 0;
+        // Push constants information
+        std::array<vk::PushConstantRange, 1> pushConstants = {
+            vk::PushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4)),
+        };
+        vk::PipelineLayoutCreateInfo pipelineLayoutInfo({},
+                setLayouts.size(), setLayouts.data(),
+                pushConstants.size(), pushConstants.data()
+                );
 
         try {
             pipelineLayout = device->createPipelineLayout(pipelineLayoutInfo);
@@ -840,7 +849,9 @@ private:
 
                 commandBuffers[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
-                model.render(commandBuffers[i], pipelineLayout);
+                model.render(commandBuffers[i], pipelineLayout,
+                        glm::scale(glm::mat4(1.0f), glm::vec3(3.0f))
+                        );
             }
             commandBuffers[i].endRenderPass();
 
@@ -873,10 +884,14 @@ private:
         auto currentTime = std::chrono::high_resolution_clock::now();
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
+        glm::vec3 cameraPosition = glm::vec3(
+            glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), WORLD_UP) * glm::vec4(3.0f, 0.0f, 0.0f, 1.0f)
+                );
+
         UniformBufferObject ubo {
-            glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-                glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-                glm::perspective(glm::radians(60.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f)
+            glm::lookAt(cameraPosition, glm::vec3(0.0f, 0.0f, 0.0f), WORLD_UP),
+            glm::perspective(glm::radians(60.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f),
+            cameraPosition
         };
         // Y coordinate is inverted
         ubo.proj[1][1] *= -1;

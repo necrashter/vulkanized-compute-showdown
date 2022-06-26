@@ -36,13 +36,12 @@ public:
         vk::VertexInputRate::eVertex,
     };
     constexpr static std::array<vk::VertexInputAttributeDescription, 4> vertexAttributeDescription {
-        // TODO: update locations after updating shaders
         vk::VertexInputAttributeDescription(
                 0, 0, // location and binding
                 vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos)),
 
         vk::VertexInputAttributeDescription(
-                3, 0, // location and binding
+                1, 0, // location and binding
                 vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal)),
 
         vk::VertexInputAttributeDescription(
@@ -50,7 +49,7 @@ public:
                 vk::Format::eR32G32Sfloat, offsetof(Vertex, uv)),
 
         vk::VertexInputAttributeDescription(
-                1, 0, // location and binding
+                3, 0, // location and binding
                 vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)),
     };
 
@@ -432,8 +431,7 @@ public:
             Node& node, glm::mat4 matrix) {
         matrix = matrix * node.matrix;
         if (node.primitives.size() > 0) {
-            // TODO
-            // vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &nodeMatrix);
+            commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &matrix);
             for (Primitive& primitive : node.primitives) {
                 if (primitive.indexCount > 0) {
                     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 1, 1, &materialDescriptorSets[primitive.materialIndex], 0, nullptr);
@@ -447,14 +445,15 @@ public:
     }
 
     // Draw the gltf scene starting at the top-level-nodes
-    void render(vk::CommandBuffer commandBuffer, vk::PipelineLayout pipelineLayout) {
+    void render(vk::CommandBuffer commandBuffer,
+            vk::PipelineLayout pipelineLayout, glm::mat4 matrix = glm::mat4(1.0f)) {
         // All vertices and indices are stored in single buffers, so we only need to bind once
         VkDeviceSize offsets[1] = { 0 };
         commandBuffer.bindVertexBuffers(0, 1, &vertices.buffer, offsets);
         commandBuffer.bindIndexBuffer(indices.buffer, 0, vk::IndexType::eUint32);
         // Render all nodes at top-level
         for (auto& node : nodes) {
-            renderNode(commandBuffer, pipelineLayout, node, glm::mat4(1.0f));
+            renderNode(commandBuffer, pipelineLayout, node, matrix);
         }
     }
 
