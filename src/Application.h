@@ -198,10 +198,8 @@ private:
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
-            drawFrame();
+            renderFrame();
         }
-
-        device->waitIdle();
     }
 
     void cleanupSwapChain() {
@@ -227,6 +225,8 @@ private:
     }
 
     void cleanup() {
+        device->waitIdle();
+
         // NOTE: instance destruction is handled by UniqueInstance, same for device
 
         cleanupSwapChain();
@@ -886,7 +886,7 @@ private:
         device->unmapMemory(uniformBuffersMemory[index]);
     }
 
-    void drawFrame() {
+    void renderFrame() {
         (void) device->waitForFences(1, &inFlightFences[currentFrame], VK_TRUE, std::numeric_limits<uint64_t>::max());
 
         updateUniformBuffer(currentFrame);
@@ -1092,15 +1092,18 @@ private:
     }
 
 public:
-    void run() {
+    Application(): model(this) {
         initWindow();
         initVulkan();
-        mainLoop();
-        cleanup();
     }
 
-    Application(): model(this) {
+    void run() {
+        mainLoop();
     }
+
+	~Application() {
+        cleanup();
+	}
 };
 
 #endif
