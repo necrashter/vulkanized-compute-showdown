@@ -11,4 +11,11 @@ const struct {
 } ProgramInfo;
 
 
+#define GLM_FORCE_RADIANS
+// use 0, 1 depth in Vulkan instead of OpenGL's -1 to 1
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
+
+const glm::vec3 WORLD_UP(0.0f, 1.0f, 0.0f);
+
 #endif

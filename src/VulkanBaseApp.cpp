@@ -123,7 +123,8 @@ void VulkanBaseApp::pickPhysicalDevice() {
 
     throw std::runtime_error("Failed to find a suitable GPU");
 deviceFound:
-    std::cout << "[INIT] Selected device: " << physicalDevice.getProperties().deviceName << std::endl;
+    deviceName = std::string(physicalDevice.getProperties().deviceName);
+    std::cout << "[INIT] Selected device: " << deviceName << std::endl;
 }
 
 void VulkanBaseApp::createLogicalDevice() {
@@ -202,6 +203,7 @@ void VulkanBaseApp::drawImgui() {
         if (ImGui::Begin("Performance", &imguiShowPerformance, windowFlags)) {
             ImGui::Text("%.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
             ImGui::Text("Average: %d FPS", framesPerSecond);
+            ImGui::Text("\nGPU: %s", deviceName.c_str());
         }
         ImGui::End();
     }

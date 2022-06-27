@@ -3,6 +3,7 @@
 
 #include "VulkanBaseApp.h"
 #include "GraphicsPipelineBuilder.h"
+#include "Noclip.h"
 
 
 struct UniformBufferObject {
@@ -30,10 +31,13 @@ private:
     std::vector<vk::Buffer> uniformBuffers;
     std::vector<vk::DeviceMemory> uniformBuffersMemory;
 
+    noclip::cam noclipCam;
+
 public:
     ModelViewScreen(VulkanBaseApp* app):
         AppScreen(app),
-        model(app)
+        model(app),
+        noclipCam(app->window)
     {
         model.loadFile("../assets/FlightHelmet/FlightHelmet.gltf");
         model.createBuffers();
@@ -176,14 +180,15 @@ public:
 
 
     void updateUniformBuffer(uint32_t index) {
-        glm::vec3 cameraPosition = glm::vec3(
-            glm::rotate(glm::mat4(1.0f), app->time * glm::radians(90.0f), WORLD_UP) * glm::vec4(3.0f, 0.0f, 0.0f, 1.0f)
-                );
+        // glm::vec3 cameraPosition = glm::vec3(
+        //     glm::rotate(glm::mat4(1.0f), app->time * glm::radians(90.0f), WORLD_UP) * glm::vec4(3.0f, 0.0f, 0.0f, 1.0f)
+        //         );
 
         UniformBufferObject ubo {
-            glm::lookAt(cameraPosition, glm::vec3(0.0f, 0.0f, 0.0f), WORLD_UP),
+            // glm::lookAt(cameraPosition, glm::vec3(0.0f, 0.0f, 0.0f), WORLD_UP),
+            noclipCam.get_view_matrix(),
             glm::perspective(glm::radians(60.0f), app->swapChainExtent.width / (float) app->swapChainExtent.height, 0.1f, 10.0f),
-            cameraPosition
+            noclipCam.position
         };
         // Y coordinate is inverted
         ubo.proj[1][1] *= -1;
@@ -206,6 +211,33 @@ public:
                 glm::scale(glm::mat4(1.0f), glm::vec3(3.0f))
                 );
     }
+
+    virtual void mouseMovementCallback(GLFWwindow* window, double xpos, double ypos) override {
+        static double lastxpos = 0, lastypos = 0;
+
+        double xdiff = xpos - lastxpos;
+        double ydiff = lastypos - ypos;
+
+#ifdef USE_IMGUI
+        if (!ImGui::IsAnyItemActive())
+#endif
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+            noclipCam.process_mouse(xdiff, ydiff);
+            noclipCam.update_vectors();
+        }
+
+        lastxpos = xpos;
+        lastypos = ypos;
+    }
+
+    virtual void update(float delta) override {
+        noclipCam.update(delta);
+    }
+
+#ifdef USE_IMGUI
+    virtual void imgui() override {
+    }
+#endif
 
     virtual ~ModelViewScreen() {
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {

@@ -38,8 +38,6 @@ const int HEIGHT = 720;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
-const glm::vec3 WORLD_UP(0.0f, 1.0f, 0.0f);
-
 const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
@@ -75,6 +73,14 @@ public:
 
     // Called before graphics commands are submitted.
     virtual void preGraphicsSubmit(uint32_t index) = 0;
+
+    virtual void mouseMovementCallback(GLFWwindow* window, double xpos, double ypos) = 0;
+
+    virtual void update(float delta) = 0;
+
+#ifdef USE_IMGUI
+    virtual void imgui() = 0;
+#endif
 
     virtual ~AppScreen() {}
 };
@@ -140,6 +146,8 @@ public:
     std::vector<vk::Semaphore> renderFinishedSemaphores;
     std::vector<vk::Fence> inFlightFences;
 
+    std::string deviceName;
+
 private:
 #ifdef USE_IMGUI
     ImguiOverlay imguiOverlay;
@@ -177,11 +185,19 @@ protected:
         window = glfwCreateWindow(WIDTH, HEIGHT, ProgramInfo.name, nullptr, nullptr);
         glfwSetWindowUserPointer(window, this);
         glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+        glfwSetCursorPosCallback(window, mouseMovementCallback);
     }
 
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
         auto app = reinterpret_cast<VulkanBaseApp*>(glfwGetWindowUserPointer(window));
         app->framebufferResized = true;
+    }
+
+    static void mouseMovementCallback(GLFWwindow* window, double xpos, double ypos) {
+        auto app = reinterpret_cast<VulkanBaseApp*>(glfwGetWindowUserPointer(window));
+        if (app->screen) {
+            app->screen->mouseMovementCallback(window, xpos, ypos);
+        }
     }
 
     void initVulkan() {
@@ -233,11 +249,14 @@ protected:
     void mainLoop() {
         static auto startTime = std::chrono::high_resolution_clock::now();
         static auto lastSecond = startTime;
+        static auto lastTime = startTime;
         static int frames = 0;
+        float delta;
 
         while (!glfwWindowShouldClose(window)) {
             auto currentTime = std::chrono::high_resolution_clock::now();
             time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+            delta = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastTime).count();
             ++frames;
             if (std::chrono::duration<float, std::chrono::seconds::period>(currentTime - lastSecond).count() >= 1.0) {
                 lastSecond = std::chrono::high_resolution_clock::now();
@@ -249,15 +268,18 @@ protected:
             }
 
             glfwPollEvents();
+            if (screen) screen->update(delta);
 
 #ifdef USE_IMGUI
             imguiOverlay.newFrame();
 
             drawImgui();
+            if (screen) screen->imgui();
 
             ImGui::Render();
 #endif
             renderFrame();
+            lastTime = currentTime;
         }
     }
 
