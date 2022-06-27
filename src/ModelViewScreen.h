@@ -2,6 +2,7 @@
 #define MODEL_VIEWER_SCREEN_H
 
 #include "VulkanBaseApp.h"
+#include "GraphicsPipelineBuilder.h"
 
 
 struct UniformBufferObject {
@@ -45,13 +46,12 @@ public:
     }
 
     void createGraphicsPipeline() {
-        auto vertShaderCode = readBinaryFile("shaders/shader.vert.spv");
-        auto fragShaderCode = readBinaryFile("shaders/shader.frag.spv");
+        GraphicsPipelineBuilder pipelineBuilder;
 
-        auto vertShaderModule = app->createShaderModule(vertShaderCode);
-        auto fragShaderModule = app->createShaderModule(fragShaderCode);
+        auto vertShaderModule = app->createShaderModule(readBinaryFile("shaders/shader.vert.spv"));
+        auto fragShaderModule = app->createShaderModule(readBinaryFile("shaders/shader.frag.spv"));
 
-        vk::PipelineShaderStageCreateInfo shaderStages[] = { 
+        pipelineBuilder.stages = { 
             {
                 vk::PipelineShaderStageCreateFlags(),
                 vk::ShaderStageFlagBits::eVertex,
@@ -66,104 +66,30 @@ public:
             } 
         };
 
-        vk::PipelineVertexInputStateCreateInfo vertexInputInfo = {};
-        vertexInputInfo.vertexBindingDescriptionCount = 0;
-        vertexInputInfo.vertexAttributeDescriptionCount = 0;
-
         auto bindingDescription = Model::vertexBindingDescription;
         auto attributeDescriptions = Model::vertexAttributeDescription;
 
-        vertexInputInfo.vertexBindingDescriptionCount = 1;
-        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-        vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-        vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+        pipelineBuilder.vertexInput.vertexBindingDescriptionCount = 1;
+        pipelineBuilder.vertexInput.pVertexBindingDescriptions = &bindingDescription;
+        pipelineBuilder.vertexInput.vertexAttributeDescriptionCount = attributeDescriptions.size();
+        pipelineBuilder.vertexInput.pVertexAttributeDescriptions = attributeDescriptions.data();
 
-        vk::PipelineInputAssemblyStateCreateInfo inputAssembly = {};
-        inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
-        inputAssembly.primitiveRestartEnable = VK_FALSE;
 
-        vk::PipelineViewportStateCreateInfo viewportState(
-                {},
-                1, nullptr,
-                1, nullptr // viewport and scissors are dynamic, hence nullptr (ignored)
-                );
-
-        vk::PipelineRasterizationStateCreateInfo rasterizer = {};
-        rasterizer.depthClampEnable = VK_FALSE;
-        rasterizer.rasterizerDiscardEnable = VK_FALSE;
-        rasterizer.polygonMode = vk::PolygonMode::eFill;
-        rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode = vk::CullModeFlagBits::eBack;
-        rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
-        rasterizer.depthBiasEnable = VK_FALSE;
-
-        vk::PipelineMultisampleStateCreateInfo multisampling = {};
-        multisampling.sampleShadingEnable = VK_FALSE;
-        multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
-
-        vk::PipelineColorBlendAttachmentState colorBlendAttachment = {};
-        colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-        colorBlendAttachment.blendEnable = VK_FALSE;
-
-        vk::PipelineColorBlendStateCreateInfo colorBlending = {};
-        colorBlending.logicOpEnable = VK_FALSE;
-        colorBlending.logicOp = vk::LogicOp::eCopy;
-        colorBlending.attachmentCount = 1;
-        colorBlending.pAttachments = &colorBlendAttachment;
-        colorBlending.blendConstants[0] = 0.0f;
-        colorBlending.blendConstants[1] = 0.0f;
-        colorBlending.blendConstants[2] = 0.0f;
-        colorBlending.blendConstants[3] = 0.0f;
-
-        std::array<vk::DescriptorSetLayout, 2> setLayouts = {
+        pipelineBuilder.descriptorSetLayouts = {
             descriptorSetLayouts.perFrame,
             descriptorSetLayouts.perMaterial,
         };
-        // Push constants information
-        std::array<vk::PushConstantRange, 1> pushConstants = {
+        pipelineBuilder.pushConstants = {
             vk::PushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4)),
         };
-        vk::PipelineLayoutCreateInfo pipelineLayoutInfo({},
-                setLayouts.size(), setLayouts.data(),
-                pushConstants.size(), pushConstants.data()
-                );
+
+        pipelineBuilder.pipelineInfo.renderPass = app->renderPass;
 
         try {
-            pipelineLayout = app->device->createPipelineLayout(pipelineLayoutInfo);
+            graphicsPipeline = pipelineBuilder.build(app->device.get());
+            pipelineLayout = pipelineBuilder.pipelineLayout;
         } catch (vk::SystemError const &err) {
-            throw std::runtime_error("failed to create pipeline layout!");
-        }
-
-        // Depth testing
-        vk::PipelineDepthStencilStateCreateInfo depthStencil({}, true, true, vk::CompareOp::eLess, false, false);
-
-        vk::GraphicsPipelineCreateInfo pipelineInfo = {};
-        pipelineInfo.stageCount = 2;
-        pipelineInfo.pStages = shaderStages;
-        pipelineInfo.pVertexInputState = &vertexInputInfo;
-        pipelineInfo.pInputAssemblyState = &inputAssembly;
-        pipelineInfo.pViewportState = &viewportState;
-        pipelineInfo.pRasterizationState = &rasterizer;
-        pipelineInfo.pMultisampleState = &multisampling;
-        pipelineInfo.pColorBlendState = &colorBlending;
-        pipelineInfo.layout = pipelineLayout;
-        pipelineInfo.renderPass = app->renderPass;
-        pipelineInfo.subpass = 0;
-        pipelineInfo.basePipelineHandle = nullptr;
-        pipelineInfo.pDepthStencilState = &depthStencil;
-
-        std::array<vk::DynamicState, 2> dynamicStates = {
-            vk::DynamicState::eViewport,
-            vk::DynamicState::eScissor,
-        };
-        vk::PipelineDynamicStateCreateInfo dynamicState({}, dynamicStates.size(), dynamicStates.data());
-        pipelineInfo.pDynamicState = &dynamicState;
-
-        try {
-            graphicsPipeline = app->device->createGraphicsPipeline(nullptr, pipelineInfo).value;
-        }
-        catch (vk::SystemError const &err) {
-            throw std::runtime_error("failed to create graphics pipeline!");
+            throw std::runtime_error("Failed to create graphics pipeline");
         }
     }
 
