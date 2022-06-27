@@ -1,2 +1,4 @@
 .clangd
 bin
+.vscode
+assets

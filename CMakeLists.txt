@@ -13,6 +13,7 @@ set(CMAKE_CXX_FLAGS "-Wall -g")
 
 # COMPILE OPTIONS
 option(USE_IMGUI "Enable Dear Imgui" ON)
+option(USE_SHADERC "Enable shaderc for compiling GLSL at run-time" OFF)
 
 
 #######################################################################
@@ -38,11 +39,22 @@ set(glm_DIR libs/glm/cmake/glm)
 find_package(glm REQUIRED)
 
 message(STATUS "GLM includes ${GLM_INCLUDE_DIRS}")
-message(STATUS "GLM found ${glm_FOUND}")
 
 # Vulkan itself
 find_package(Vulkan REQUIRED FATAL_ERROR)
 
+# shaderc
+if(USE_SHADERC)
+    find_library(SHADERC shaderc_combined)
+    if (SHADERC)
+        message(STATUS "Found shaderc: ${SHADERC}")
+        list(APPEND EXTRA_LIBS ${SHADERC})
+        list(APPEND EXTRA_LIBS pthread)
+        add_compile_definitions(USE_SHADERC)
+    else()
+        message(FATAL_ERROR "shaderc was requested but NOT found!")
+    endif()
+endif()
 
 #######################################################################
 #                               SHADERS                               #

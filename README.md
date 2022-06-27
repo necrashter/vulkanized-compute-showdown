@@ -11,14 +11,20 @@ Configure with default settings in CMakeLists.txt:
 ```sh
 $ cmake ..
 ```
-Disable ImGui:
+
+Configure with custom settings; enable/disable external dependencies:
 ```sh
-$ cmake .. -DUSE_IMGUI=OFF
+$ cmake -DUSE_IMGUI=ON -DUSE_SHADERC=OFF ..
+```
+These are the default settings.
+
+Compile with 4 processes:
+```sh
+$ make -j4
 ```
 
-Compile & run:
-```sh
-$ make
+Run:
+```
 $ ./main
 ```
 
