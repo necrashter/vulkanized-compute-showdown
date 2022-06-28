@@ -5,22 +5,6 @@
 bool listGPUs = false;
 std::optional<int> selectedGPU = std::nullopt;
 
-const std::vector<std::pair<std::string, std::function<AppScreen*(VulkanBaseApp*)>>> 
-screenCreators = {
-    {"ModelView", [](VulkanBaseApp* app) { return new ModelViewScreen(app); } },
-};
-
-std::function<AppScreen*(VulkanBaseApp*)> findScreen(std::string& query) {
-    std::function<AppScreen*(VulkanBaseApp*)> f = nullptr;
-    for (auto s : screenCreators) {
-        if (s.first == query) {
-            f = s.second;
-            break;
-        }
-    }
-    return f;
-}
-
 /* 
     VULKAN CONTEXT INIT
 */
@@ -166,8 +150,9 @@ void VulkanBaseApp::createLogicalDevice() {
         throw std::runtime_error("failed to create logical device!");
     }
 
-    graphicsQueue = device->getQueue(indices.graphicsFamily.value(), 0);
-    presentQueue = device->getQueue(indices.presentFamily.value(), 0);
+    graphicsQueue = device->getQueue(queueFamilyIndices.graphics, 0);
+    presentQueue = device->getQueue(queueFamilyIndices.present, 0);
+    computeQueue = device->getQueue(queueFamilyIndices.compute, 0);
 }
 
 

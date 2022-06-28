@@ -18,4 +18,9 @@ const struct {
 
 const glm::vec3 WORLD_UP(0.0f, 1.0f, 0.0f);
 
+const int WIDTH = 1280;
+const int HEIGHT = 720;
+
+const int MAX_FRAMES_IN_FLIGHT = 2;
+
 #endif

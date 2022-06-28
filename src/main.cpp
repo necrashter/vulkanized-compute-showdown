@@ -11,7 +11,7 @@ int main(int argc, char** argv) {
 
     printInfo();
 
-    std::function<AppScreen*(VulkanBaseApp*)> startingScreen = nullptr;
+    std::function<BaseScreen*(VulkanBaseApp*)> startingScreen = nullptr;
     if (auto arg = argparser.getArgStr("screen")) {
         startingScreen = findScreen(*arg);
         if (startingScreen == nullptr) {

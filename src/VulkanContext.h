@@ -56,6 +56,7 @@ public:
     vk::UniqueDevice device;
 
     vk::Queue graphicsQueue;
+    vk::Queue computeQueue;
 
     vk::CommandPool commandPool;
 

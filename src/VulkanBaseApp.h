@@ -2,8 +2,7 @@
 #define APPLICATION_H
 
 #include "VulkanContext.h"
-#include "Model.h"
-#include "Texture.h"
+#include "BaseScreen.h"
 
 #include <vulkan/vulkan.hpp>
 #include <GLFW/glfw3.h>
@@ -33,23 +32,18 @@
 #include "config.h"
 
 
-const int WIDTH = 1280;
-const int HEIGHT = 720;
-
-const int MAX_FRAMES_IN_FLIGHT = 2;
-
 const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
 
-
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;
+    std::optional<uint32_t> computeFamily;
 
     bool isComplete() {
-        return graphicsFamily.has_value() && presentFamily.has_value();
+        return graphicsFamily.has_value() && presentFamily.has_value() && computeFamily.has_value();
     }
 };
 
@@ -59,37 +53,6 @@ struct SwapChainSupportDetails {
     std::vector<vk::PresentModeKHR> presentModes;
 };
 
-
-class VulkanBaseApp;
-
-class AppScreen {
-public:
-    VulkanBaseApp* const app;
-
-    AppScreen(VulkanBaseApp* app): app(app) {}
-
-    // Record render commands that will be submitted to graphics queue
-    virtual void recordRenderCommands(vk::CommandBuffer commandBuffer, uint32_t index) = 0;
-
-    // Called before graphics commands are submitted.
-    virtual void preGraphicsSubmit(uint32_t index) = 0;
-
-    virtual void mouseMovementCallback(GLFWwindow* window, double xpos, double ypos) = 0;
-
-    virtual void update(float delta) = 0;
-
-#ifdef USE_IMGUI
-    virtual void imgui() = 0;
-#endif
-
-    virtual ~AppScreen() {}
-};
-
-
-extern const std::vector<std::pair<std::string, std::function<AppScreen*(VulkanBaseApp*)>>>
-screenCreators;
-
-std::function<AppScreen*(VulkanBaseApp*)> findScreen(std::string& query);
 
 extern bool listGPUs;
 extern std::optional<int> selectedGPU;
@@ -133,7 +96,7 @@ public:
     int framesPerSecond = 0;
 
     // Currently active screen
-    AppScreen* screen = nullptr;
+    BaseScreen* screen = nullptr;
 
     size_t currentFrame = 0;
     vk::Extent2D swapChainExtent;
@@ -147,6 +110,10 @@ public:
     std::vector<vk::Fence> inFlightFences;
 
     std::string deviceName;
+
+    struct {
+        uint32_t graphics, present, compute;
+    } queueFamilyIndices;
 
 private:
 #ifdef USE_IMGUI
@@ -205,6 +172,10 @@ protected:
         setupDebugCallback();
         createSurface();
         pickPhysicalDevice();
+        auto indices = findQueueFamilies(physicalDevice);
+        queueFamilyIndices.graphics = indices.graphicsFamily.value();
+        queueFamilyIndices.present = indices.presentFamily.value();
+        queueFamilyIndices.compute = indices.computeFamily.value();
         createLogicalDevice();
 
         createCommandPool();
@@ -351,13 +322,12 @@ protected:
             vk::ImageUsageFlagBits::eColorAttachment
         );
 
-        QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
-        uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+        uint32_t indices[] = { queueFamilyIndices.graphics, queueFamilyIndices.present };
 
-        if (indices.graphicsFamily != indices.presentFamily) {
+        if (queueFamilyIndices.graphics != queueFamilyIndices.present) {
             createInfo.imageSharingMode = vk::SharingMode::eConcurrent;
             createInfo.queueFamilyIndexCount = 2;
-            createInfo.pQueueFamilyIndices = queueFamilyIndices;
+            createInfo.pQueueFamilyIndices = indices;
         }
         else {
             createInfo.imageSharingMode = vk::SharingMode::eExclusive;
@@ -493,11 +463,9 @@ protected:
     }
 
     void createCommandPool() {
-        QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
-
         vk::CommandPoolCreateInfo poolInfo(
                 vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-                queueFamilyIndices.graphicsFamily.value()
+                queueFamilyIndices.graphics
                 );
 
         try {
@@ -616,23 +584,24 @@ protected:
 
         recordCommandBuffer(imageIndex);
 
+        vk::CommandBuffer* bufferToSubmit = &commandBuffers[imageIndex];
         if (screen) {
-            screen->preGraphicsSubmit(currentFrame);
-        }
+            screen->submitGraphics(bufferToSubmit, currentFrame);
+        } else {
+            vk::Semaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
+            vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
+            vk::Semaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
 
-        vk::Semaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
-        vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-        vk::Semaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
+            vk::SubmitInfo submitInfo(
+                    std::size(waitSemaphores), waitSemaphores, waitStages,
+                    1, bufferToSubmit,
+                    std::size(signalSemaphores), signalSemaphores);
 
-        vk::SubmitInfo submitInfo(
-                std::size(waitSemaphores), waitSemaphores, waitStages,
-                1, &commandBuffers[imageIndex],
-                std::size(signalSemaphores), signalSemaphores);
-
-        try {
-            graphicsQueue.submit(submitInfo, inFlightFences[currentFrame]);
-        } catch (vk::SystemError const &err) {
-            throw std::runtime_error("Failed to submit draw command buffer!");
+            try {
+                graphicsQueue.submit(submitInfo, inFlightFences[currentFrame]);
+            } catch (vk::SystemError const &err) {
+                throw std::runtime_error("Failed to submit draw command buffer");
+            }
         }
 
         vk::PresentInfoKHR presentInfo(
@@ -645,7 +614,7 @@ protected:
         } catch (vk::OutOfDateKHRError const &err) {
             resultPresent = vk::Result::eErrorOutOfDateKHR;
         } catch (vk::SystemError const &err) {
-            throw std::runtime_error("Failed to present swap chain image!");
+            throw std::runtime_error("Failed to present swap chain image");
         }
 
         if (resultPresent == vk::Result::eSuboptimalKHR || resultPresent == vk::Result::eSuboptimalKHR || framebufferResized) {
@@ -755,20 +724,35 @@ protected:
         auto queueFamilies = device.getQueueFamilyProperties();
 
         int i = 0;
+        std::cout << "Q fam props of " << device.getProperties().deviceName << std::endl;
         for (const auto& queueFamily : queueFamilies) {
-            if (queueFamily.queueCount > 0 && queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
-                indices.graphicsFamily = i;
-            }
+            std::cout << "\tQ"<<i<<' ';
+            if (queueFamily.queueCount > 0) {
+                if (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
+                    std::cout << "graphics ";
+                    if (!indices.graphicsFamily.has_value()) indices.graphicsFamily = i;
+                }
 
-            if (queueFamily.queueCount > 0 && device.getSurfaceSupportKHR(i, surface)) {
-                indices.presentFamily = i;
-            }
+                if (queueFamily.queueCount > 0 && queueFamily.queueFlags & vk::QueueFlagBits::eCompute) {
+                    std::cout << "compute ";
+                    if (!indices.computeFamily.has_value()) indices.computeFamily = i;
+                }
 
+                if (queueFamily.queueCount > 0 && device.getSurfaceSupportKHR(i, surface)) {
+                    std::cout << "present ";
+                    if (!indices.presentFamily.has_value()) indices.presentFamily = i;
+                }
+            }
+            std::cout << std::endl;
+
+
+            /*
             if (indices.isComplete()) {
                 break;
             }
+            */
 
-            i++;
+            ++i;
         }
 
         return indices;
