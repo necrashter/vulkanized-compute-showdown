@@ -17,8 +17,7 @@ void VulkanBaseApp::createInstance() {
     auto appInfo = vk::ApplicationInfo(
         ProgramInfo.name,
         VK_MAKE_VERSION(ProgramInfo.version.major, ProgramInfo.version.minor, ProgramInfo.version.patch),
-        "-",
-        VK_MAKE_VERSION(1, 0, 0),
+        nullptr, 0,
         VK_API_VERSION_1_0
     );
 
@@ -40,7 +39,7 @@ void VulkanBaseApp::createInstance() {
         instance = vk::createInstanceUnique(createInfo, nullptr);
     }
     catch (vk::SystemError const &err) {
-        throw std::runtime_error("failed to create instance!");
+        throw std::runtime_error("Failed to create Vulkan instance");
     }
 }
 
@@ -61,14 +60,14 @@ void VulkanBaseApp::setupDebugCallback() {
 
     // NOTE: reinterpret_cast is also used by vulkan.hpp internally for all these structs
     if (CreateDebugUtilsMessengerEXT(*instance, reinterpret_cast<const VkDebugUtilsMessengerCreateInfoEXT*>(&createInfo), nullptr, &callback) != VK_SUCCESS) {
-        throw std::runtime_error("failed to set up debug callback!");
+        throw std::runtime_error("Failed to set up debug callback");
     }
 }
 
 void VulkanBaseApp::createSurface() {
     VkSurfaceKHR rawSurface;
     if (glfwCreateWindowSurface(*instance, window, nullptr, &rawSurface) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create window surface!");
+        throw std::runtime_error("Failed to create window surface");
     }
 
     surface = rawSurface;
@@ -91,10 +90,10 @@ void VulkanBaseApp::pickPhysicalDevice() {
                 physicalDevice = devices[index];
                 goto deviceFound;
             } else {
-                std::cerr << "[INIT] Selected GPU (" << *selectedGPU << ") is not suitable!" << std::endl;
+                TERR("INIT") << "Selected GPU (" << *selectedGPU << ") is not suitable!" << std::endl;
             }
         } else {
-            std::cerr << "[INIT] Invalid device index: " << *selectedGPU << " (must be between 0 and " << devices.size()-1 << ")" << std::endl;
+            TERR("INIT") << "Invalid device index: " << *selectedGPU << " (must be between 0 and " << devices.size()-1 << ")" << std::endl;
         }
     }
 
@@ -108,14 +107,16 @@ void VulkanBaseApp::pickPhysicalDevice() {
     throw std::runtime_error("Failed to find a suitable GPU");
 deviceFound:
     deviceName = std::string(physicalDevice.getProperties().deviceName);
-    std::cout << "[INIT] Selected device: " << deviceName << std::endl;
+    TLOG("INIT") << "Selected device: " << deviceName << std::endl;
 }
 
 void VulkanBaseApp::createLogicalDevice() {
-    QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
-
     std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos;
-    std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+    std::set<uint32_t> uniqueQueueFamilies = {
+        queueFamilyIndices.graphics,
+        queueFamilyIndices.present,
+        queueFamilyIndices.compute,
+    };
 
     float queuePriority = 1.0f;
 

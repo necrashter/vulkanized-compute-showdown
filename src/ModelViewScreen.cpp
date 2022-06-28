@@ -123,13 +123,18 @@ ModelViewScreen::ModelViewScreen(VulkanBaseApp* app):
 }
 
 
-void ModelViewScreen::recordRenderCommands(vk::CommandBuffer commandBuffer, uint32_t index) {
+void ModelViewScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo, vk::CommandBuffer commandBuffer, uint32_t index) {
+    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptorSets[index], 0, nullptr);
 
     model.render(commandBuffer, pipelineLayout,
             glm::scale(glm::mat4(1.0f), glm::vec3(3.0f))
             );
+
+    app->renderUI(commandBuffer);
+    commandBuffer.endRenderPass();
 }
 
 

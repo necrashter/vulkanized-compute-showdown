@@ -18,7 +18,7 @@ public:
     BaseScreen(VulkanBaseApp* app): app(app) {}
 
     // Record render commands that will be submitted to graphics queue
-    virtual void recordRenderCommands(vk::CommandBuffer commandBuffer, uint32_t index) = 0;
+    virtual void recordRenderCommands(vk::RenderPassBeginInfo, vk::CommandBuffer, uint32_t) = 0;
 
     // Submit the given graphics command buffer in this function.
     // Override to wait for your own semaphores, submit commands to compute shaders, etc.

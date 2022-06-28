@@ -23,7 +23,7 @@ private:
 public:
     ModelViewScreen(VulkanBaseApp* app);
 
-    virtual void recordRenderCommands(vk::CommandBuffer commandBuffer, uint32_t index) override;
+    virtual void recordRenderCommands(vk::RenderPassBeginInfo, vk::CommandBuffer, uint32_t) override;
 
     virtual ~ModelViewScreen();
 };

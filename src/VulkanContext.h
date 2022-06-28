@@ -60,6 +60,10 @@ public:
 
     vk::CommandPool commandPool;
 
+    struct {
+        uint32_t graphics, present, compute;
+    } queueFamilyIndices;
+
 ////////////////////////////////////////////////////////////////////////
 //                         UTILITY FUNCTIONS                          //
 ////////////////////////////////////////////////////////////////////////

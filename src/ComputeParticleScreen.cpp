@@ -43,7 +43,8 @@ namespace {
 
 
 ComputeParticleScreen::ComputeParticleScreen(VulkanBaseApp* app):
-    CameraScreen(app)
+    CameraScreen(app),
+    compute(app)
 {
     prepareGraphicsPipeline();
     prepareComputePipeline();
@@ -161,240 +162,59 @@ void ComputeParticleScreen::prepareGraphicsPipeline() {
 }
 
 
-////////////////////////////////////////////////////////////////////////
-//                          COMPUTE PIPELINE                          //
-////////////////////////////////////////////////////////////////////////
-
 void ComputeParticleScreen::prepareComputePipeline() {
-    // Create Descriptor Pool
-    // ---------------------------------------------------------------
+    auto shaderData = generateShaderData(particleCount);
 
-    vk::DescriptorPoolSize poolSizes[] = {
-        // UBO
-        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1),
-        vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 1),
-    };
-    vk::DescriptorPoolCreateInfo poolCreateInfo({},
-            1,
-            std::size(poolSizes), poolSizes);
-    try {
-        compute.descriptorPool = app->device->createDescriptorPool(poolCreateInfo);
-    } catch (vk::SystemError const &err) {
-        throw std::runtime_error("Failed to create descriptor pool");
-    }
+    computeSSBO = compute.createShaderStorage(shaderData.data(), sizeof(Particle) * shaderData.size());
+    computeUBOmap = compute.createUniformBuffer(sizeof(ComputeUBO));
+    compute.finalizeLayout();
 
-    // Create Descriptor Set Layout
-    // ---------------------------------------------------------------
+    compute.addPipeline(readBinaryFile("shaders/particles.comp.spv"), "main");
+    compute.recordCommands(particleCount / workgroupSize, 1, 1);
 
-    vk::DescriptorSetLayoutBinding binding[] = {
-        vk::DescriptorSetLayoutBinding(
-            0, vk::DescriptorType::eStorageBuffer, 1,
-            vk::ShaderStageFlagBits::eCompute,
-            nullptr),
-        vk::DescriptorSetLayoutBinding(
-            1, vk::DescriptorType::eUniformBuffer, 1,
-            vk::ShaderStageFlagBits::eCompute,
-            nullptr),
-    };
-
-    try {
-        compute.descriptorSetLayout = app->device->createDescriptorSetLayout({{},
-                std::size(binding), binding});
-    } catch (vk::SystemError const &err) {
-        throw std::runtime_error("Failed to create descriptor set layout");
-    }
-
-    // Create Buffers
-    // ---------------------------------------------------------------
-
-    app->createBuffer(
-            sizeof(ComputeUBO),
-            vk::BufferUsageFlagBits::eUniformBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            compute.uniformBuffer, compute.uniformBufferMemory
-            );
-
-    std::vector<Particle> shaderData = generateShaderData(particleCount);
-    size_t shaderDataSize = sizeof(Particle) * shaderData.size();
-    createComputeShaderStorage(shaderData.data(), shaderDataSize);
-
-    // Create Descriptor Sets
-    // ---------------------------------------------------------------
-
-    try {
-        vk::DescriptorSetLayout layouts[] = { compute.descriptorSetLayout };
-        compute.descriptorSet = app->device->allocateDescriptorSets(vk::DescriptorSetAllocateInfo(
-                    compute.descriptorPool,
-                    std::size(layouts), layouts))[0];
-    } catch (vk::SystemError const &err) {
-        throw std::runtime_error("failed to allocate descriptor sets!");
-    }
-
-    {
-        vk::DescriptorBufferInfo storageBufferInfo(compute.storageBuffer, 0, shaderDataSize);
-        vk::DescriptorBufferInfo uboBufferInfo(compute.uniformBuffer, 0, sizeof(ComputeUBO));
-
-        vk::WriteDescriptorSet descriptorWrites[] = {
-            // Storage
-            vk::WriteDescriptorSet(
-                    compute.descriptorSet, 0, 0, 1, vk::DescriptorType::eStorageBuffer,
-                    nullptr, // image info
-                    &storageBufferInfo
-                    ),
-            // UBO
-            vk::WriteDescriptorSet(
-                    compute.descriptorSet, 1, 0, 1, vk::DescriptorType::eUniformBuffer,
-                    nullptr, // image info
-                    &uboBufferInfo
-                    ),
-        };
-        app->device->updateDescriptorSets(
-                std::size(descriptorWrites), descriptorWrites, 0, nullptr);
-    }
-
-    // Create Command Pool & Buffer
-    // ---------------------------------------------------------------
-    {
-        vk::CommandPoolCreateInfo poolInfo({}, app->queueFamilyIndices.compute);
-        compute.commandPool = app->device->createCommandPool(poolInfo);
-
-        compute.commandBuffer = app->device->allocateCommandBuffers(
-                vk::CommandBufferAllocateInfo(
-                    compute.commandPool,
-                    vk::CommandBufferLevel::ePrimary,
-                    1
-                    ))[0];
-    }
-
-    // Create Pipeline
-    // ---------------------------------------------------------------
-
-    auto shaderModule = app->createShaderModule(readBinaryFile("shaders/particles.comp.spv"));
-
-    compute.pipelineLayout = app->device->createPipelineLayout(
-            vk::PipelineLayoutCreateInfo({}, compute.descriptorSetLayout));
-
-    vk::ComputePipelineCreateInfo ComputePipelineCreateInfo(
-            vk::PipelineCreateFlags(),    // Flags
-            vk::PipelineShaderStageCreateInfo(       // Shader Create Info struct
-                    vk::PipelineShaderStageCreateFlags(),  // Flags
-                    vk::ShaderStageFlagBits::eCompute,     // Stage
-                    shaderModule.get(),                    // Shader Module
-                    "main"                                 // Shader Entry Point
-                    ),
-            compute.pipelineLayout                // Pipeline Layout
-            );
-    compute.pipeline = app->device->createComputePipeline(nullptr, ComputePipelineCreateInfo).value;
-
-    // record
-    recordComputeCommandBuffer(shaderData.size() / workgroupSize, 1, 1);
-
-    // Semaphore
-
-    compute.sem = app->device->createSemaphore({});
-    // Signal the semaphore (kickstart)
-    vk::SubmitInfo signalSubmit(
-            0, nullptr, nullptr, // wait nothing
-            0, nullptr, // do nothing
-            1, &compute.sem); // just signal
-    app->computeQueue.submit(signalSubmit);
+    // kickstart
+    compute.signalSemaphore();
 }
 
 
 
-void ComputeParticleScreen::createComputeShaderStorage(const void* input, size_t size) {
-    vk::Buffer stagingBuffer;
-    vk::DeviceMemory stagingBufferMemory;
-    app->createBuffer(
-            size,
-            vk::BufferUsageFlagBits::eTransferSrc,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            stagingBuffer, stagingBufferMemory);
 
-    void* data = app->device->mapMemory(stagingBufferMemory, 0, size);
-    memcpy(data, input, size);
-    app->device->unmapMemory(stagingBufferMemory);
-
-    app->createBuffer(
-            size,
-            // NOTE: compute shader storageBuffer is also used as vertex buffer
-            vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            compute.storageBuffer, compute.storageBufferMemory);
-    app->copyBuffer(stagingBuffer, compute.storageBuffer, size);
-
-    app->device->destroyBuffer(stagingBuffer);
-    app->device->freeMemory(stagingBufferMemory);
-}
-
-
-
-void ComputeParticleScreen::recordComputeCommandBuffer(uint32_t groups_x, uint32_t groups_y, uint32_t groups_z) {
+void ComputeParticleScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo, vk::CommandBuffer commandBuffer, uint32_t index) {
     uint32_t graphicsQindex = app->queueFamilyIndices.graphics;
     uint32_t computeQindex = app->queueFamilyIndices.compute;
 
-    // for some reason we need simultaneous use
-    vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
-    if (compute.commandBuffer.begin(&beginInfo) != vk::Result::eSuccess) {
-        throw std::runtime_error("Failed to begin recording to compute command buffer");
-    }
-
-    // TODO: apparently you need to do this after initialization too
+    // Compute shader barrier
     if (graphicsQindex != computeQindex) {
-        // need memory barrier if graphics and compute queues are different
-        // Make sure that graphics pipeline red the previous inputs
-        vk::BufferMemoryBarrier barrier(
-                // source mask, destination mask
-                {}, vk::AccessFlagBits::eShaderWrite,
-                // source and destination queues
-                graphicsQindex, computeQindex,
-                // buffer range
-                compute.storageBuffer, 0, particleCount * sizeof(Particle)
-                );
-        compute.commandBuffer.pipelineBarrier(
-                vk::PipelineStageFlagBits::eVertexInput,
-                vk::PipelineStageFlagBits::eComputeShader,
-                {}, // dependency flags
-                0, nullptr, 1, &barrier, 0, nullptr);
-    }
-
-    compute.commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, compute.pipeline);
-    compute.commandBuffer.bindDescriptorSets(
-            vk::PipelineBindPoint::eCompute,    // Bind point
-            compute.pipelineLayout,             // Pipeline Layout
-            0,                                  // First descriptor set
-            { compute.descriptorSet },          // List of descriptor sets
-            {});                                // Dynamic offsets
-    compute.commandBuffer.dispatch(groups_x, groups_y, groups_z);
-
-    if (graphicsQindex != computeQindex) {
-        // Make sure that graphics pipeline doesn't read incomplete data
-        vk::BufferMemoryBarrier barrier(
-                // source mask, destination mask
-                vk::AccessFlagBits::eShaderWrite, {},
-                // source and destination queues
-                computeQindex, graphicsQindex,
-                // buffer range
-                compute.storageBuffer, 0, particleCount * sizeof(Particle)
-                );
-        compute.commandBuffer.pipelineBarrier(
+        commandBuffer.pipelineBarrier(
                 vk::PipelineStageFlagBits::eComputeShader,
                 vk::PipelineStageFlagBits::eVertexInput,
-                {}, // dependency flags
-                0, nullptr, 1, &barrier, 0, nullptr);
+                {},
+                0, nullptr,
+                compute.graphicsAcquireBarriers.size(), compute.graphicsAcquireBarriers.data(),
+                0, nullptr);
     }
 
-    compute.commandBuffer.end();
-}
+    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
-
-
-void ComputeParticleScreen::recordRenderCommands(vk::CommandBuffer commandBuffer, uint32_t index) {
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics.pipeline);
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, graphics.pipelineLayout, 0, 1, &graphics.descriptorSets[index], 0, nullptr);
     vk::DeviceSize offsets[] = {0};
-    commandBuffer.bindVertexBuffers(0, 1, &compute.storageBuffer, offsets);
+    commandBuffer.bindVertexBuffers(0, 1, computeSSBO, offsets);
     commandBuffer.draw(particleCount, 1, 0, 0);
+
+    app->renderUI(commandBuffer);
+    commandBuffer.endRenderPass();
+
+    // Release barrier
+    if (graphicsQindex != computeQindex) {
+        commandBuffer.pipelineBarrier(
+                vk::PipelineStageFlagBits::eVertexInput,
+                vk::PipelineStageFlagBits::eComputeShader,
+                {},
+                0, nullptr,
+                compute.graphicsReleaseBarriers.size(), compute.graphicsReleaseBarriers.data(),
+                0, nullptr);
+    }
 }
 
 
@@ -439,7 +259,7 @@ void ComputeParticleScreen::submitGraphics(const vk::CommandBuffer* bufferToSubm
 
         app->computeQueue.submit(vk::SubmitInfo(
                 std::size(waitSemaphores), waitSemaphores, waitStages,
-                1, &compute.commandBuffer,
+                1, compute.getCommandBufferPointer(),
                 std::size(signalSemaphores), signalSemaphores),
                 // signal fence here, we're done with this frame
                 app->inFlightFences[currentFrame]);
@@ -457,18 +277,5 @@ ComputeParticleScreen::~ComputeParticleScreen() {
     app->device->destroyDescriptorPool(graphics.descriptorPool);
     app->device->destroyDescriptorSetLayout(graphics.descriptorSetLayout);
 
-    // Compute pipeline cleanup
-    app->device->destroyPipeline(compute.pipeline);
-    app->device->destroyPipelineLayout(compute.pipelineLayout);
-    app->device->destroyDescriptorPool(compute.descriptorPool);
-    app->device->destroyDescriptorSetLayout(compute.descriptorSetLayout);
-    app->device->destroyCommandPool(compute.commandPool);
-
-    app->device->destroyBuffer(compute.storageBuffer);
-    app->device->freeMemory(compute.storageBufferMemory);
-    app->device->destroyBuffer(compute.uniformBuffer);
-    app->device->freeMemory(compute.uniformBufferMemory);
-
     app->device->destroySemaphore(graphics.sem);
-    app->device->destroySemaphore(compute.sem);
 }

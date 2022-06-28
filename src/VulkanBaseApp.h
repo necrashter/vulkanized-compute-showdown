@@ -30,6 +30,7 @@
 #endif
 
 #include "config.h"
+#include "log.h"
 
 
 const std::vector<const char*> deviceExtensions = {
@@ -57,37 +58,6 @@ struct SwapChainSupportDetails {
 extern bool listGPUs;
 extern std::optional<int> selectedGPU;
 
-inline void printGPUs(std::vector<vk::PhysicalDevice> &devices) {
-    std::cout << std::endl;
-    int i = 0;
-    for (const auto& device : devices) {
-        auto props = device.getProperties();
-        std::cout << "Device " << i << ": " << props.deviceName
-            << "\n\tVulkan Version: " << VK_VERSION_MAJOR(props.apiVersion) << "." << VK_VERSION_MINOR(props.apiVersion) << "." << VK_VERSION_PATCH(props.apiVersion)
-            << "\n\tType: ";
-        switch (props.deviceType) {
-            case vk::PhysicalDeviceType::eDiscreteGpu:
-                std::cout << "Discrete GPU";
-                break;
-            case vk::PhysicalDeviceType::eIntegratedGpu:
-                std::cout << "Integrated GPU";
-                break;
-            case vk::PhysicalDeviceType::eCpu:
-                std::cout << "CPU";
-                break;
-            case vk::PhysicalDeviceType::eVirtualGpu:
-                std::cout << "Virtual GPU";
-                break;
-            case vk::PhysicalDeviceType::eOther:
-                std::cout << "Other";
-                break;
-        }
-        std::cout << std::endl;
-        ++i;
-    }
-    std::cout << std::endl;
-}
-
 
 class VulkanBaseApp : public VulkanContext {
 public:
@@ -111,9 +81,13 @@ public:
 
     std::string deviceName;
 
-    struct {
-        uint32_t graphics, present, compute;
-    } queueFamilyIndices;
+    // If ImGUI is enabled, this will render the UI to commandBuffer.
+    // Otherwise, it will do nothing.
+    inline void renderUI(vk::CommandBuffer commandBuffer) {
+#ifdef USE_IMGUI
+        imguiOverlay.render(commandBuffer);
+#endif
+    }
 
 private:
 #ifdef USE_IMGUI
@@ -176,6 +150,9 @@ protected:
         queueFamilyIndices.graphics = indices.graphicsFamily.value();
         queueFamilyIndices.present = indices.presentFamily.value();
         queueFamilyIndices.compute = indices.computeFamily.value();
+        TLOG("INIT") << "Selected queue families: graphics=" << queueFamilyIndices.graphics
+            << " present=" << queueFamilyIndices.present << " compute=" <<
+            queueFamilyIndices.compute << std::endl;
         createLogicalDevice();
 
         createCommandPool();
@@ -233,7 +210,7 @@ protected:
                 lastSecond = std::chrono::high_resolution_clock::now();
                 framesPerSecond = frames;
 #ifndef USE_IMGUI
-                std::cout << "FPS: " << framesPerSecond << std::endl;
+                TLOG("Application") << "FPS: " << framesPerSecond << std::endl;
 #endif
                 frames = 0;
             }
@@ -502,45 +479,39 @@ protected:
             throw std::runtime_error("Failed to begin recording command buffer!");
         }
 
-        vk::RenderPassBeginInfo renderPassInfo(
-                renderPass, 
-                swapChainFramebuffers[i],
-                vk::Rect2D({0, 0}, swapChainExtent)
+        vk::CommandBuffer commandBuffer = commandBuffers[i];
+
+        vk::Viewport viewport(
+                0.0f, 0.0f, 
+                (float)swapChainExtent.width, (float)swapChainExtent.height,
+                0.0f, 1.0f);
+
+        vk::Rect2D scissor(
+                {0, 0}, // Offset
+                swapChainExtent // extent
                 );
 
-        std::array<vk::ClearValue, 2> clearValues {
+        commandBuffer.setViewport(0, 1, &viewport);
+        commandBuffer.setScissor(0, 1, &scissor);
+
+        vk::ClearValue clearValues[] = {
             vk::ClearValue(vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f })),
                 vk::ClearValue(vk::ClearDepthStencilValue(1.0f, 0)),
         };
-        renderPassInfo.clearValueCount = clearValues.size();
-        renderPassInfo.pClearValues = clearValues.data();
+        vk::RenderPassBeginInfo renderPassInfo(
+                renderPass, 
+                swapChainFramebuffers[i],
+                vk::Rect2D({0, 0}, swapChainExtent),
+                std::size(clearValues), clearValues
+                );
 
-        vk::CommandBuffer commandBuffer = commandBuffers[i];
-
-        commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
-        {
-            vk::Viewport viewport(
-                    0.0f, 0.0f, 
-                    (float)swapChainExtent.width, (float)swapChainExtent.height,
-                    0.0f, 1.0f);
-
-            vk::Rect2D scissor(
-                    {0, 0}, // Offset
-                    swapChainExtent // extent
-                    );
-
-            commandBuffer.setViewport(0, 1, &viewport);
-            commandBuffer.setScissor(0, 1, &scissor);
-
-            if (screen) {
-                screen->recordRenderCommands(commandBuffer, currentFrame);
-            }
-
-#ifdef USE_IMGUI
-            imguiOverlay.render(commandBuffer);
-#endif
+        if (screen) {
+            screen->recordRenderCommands(renderPassInfo, commandBuffer, currentFrame);
+        } else {
+            commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+            renderUI(commandBuffer);
+            commandBuffer.endRenderPass();
         }
-        commandBuffer.endRenderPass();
 
         try {
             commandBuffer.end();
@@ -724,38 +695,78 @@ protected:
         auto queueFamilies = device.getQueueFamilyProperties();
 
         int i = 0;
-        std::cout << "Q fam props of " << device.getProperties().deviceName << std::endl;
         for (const auto& queueFamily : queueFamilies) {
-            std::cout << "\tQ"<<i<<' ';
-            if (queueFamily.queueCount > 0) {
-                if (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
-                    std::cout << "graphics ";
-                    if (!indices.graphicsFamily.has_value()) indices.graphicsFamily = i;
-                }
-
-                if (queueFamily.queueCount > 0 && queueFamily.queueFlags & vk::QueueFlagBits::eCompute) {
-                    std::cout << "compute ";
-                    if (!indices.computeFamily.has_value()) indices.computeFamily = i;
-                }
-
-                if (queueFamily.queueCount > 0 && device.getSurfaceSupportKHR(i, surface)) {
-                    std::cout << "present ";
-                    if (!indices.presentFamily.has_value()) indices.presentFamily = i;
-                }
+            if (queueFamily.queueCount <= 0) {
+                continue;
             }
-            std::cout << std::endl;
+            bool graphics = (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) == vk::QueueFlagBits::eGraphics;
+            bool compute = (queueFamily.queueFlags & vk::QueueFlagBits::eCompute) == vk::QueueFlagBits::eCompute;
+            bool present = device.getSurfaceSupportKHR(i, surface);
 
-
-            /*
-            if (indices.isComplete()) {
-                break;
+            if (graphics) {
+                if (!indices.graphicsFamily.has_value()) indices.graphicsFamily = i;
             }
-            */
+            if (compute) {
+                if (!indices.computeFamily.has_value() || !graphics)
+                    indices.computeFamily = i;
+            }
+            if (present) {
+                if (!indices.presentFamily.has_value()) indices.presentFamily = i;
+            }
 
             ++i;
         }
 
         return indices;
+    }
+
+    inline void printGPUs(std::vector<vk::PhysicalDevice> &devices) {
+        std::cout << std::endl;
+        int deviceIndex = 0;
+        for (const auto& device : devices) {
+            auto props = device.getProperties();
+            std::cout << "Device " << deviceIndex << ": " << props.deviceName
+                << "\n\tVulkan Version: " << VK_VERSION_MAJOR(props.apiVersion) << "." << VK_VERSION_MINOR(props.apiVersion) << "." << VK_VERSION_PATCH(props.apiVersion)
+                << "\n\tType: ";
+            switch (props.deviceType) {
+                case vk::PhysicalDeviceType::eDiscreteGpu:
+                    std::cout << "Discrete GPU";
+                    break;
+                case vk::PhysicalDeviceType::eIntegratedGpu:
+                    std::cout << "Integrated GPU";
+                    break;
+                case vk::PhysicalDeviceType::eCpu:
+                    std::cout << "CPU";
+                    break;
+                case vk::PhysicalDeviceType::eVirtualGpu:
+                    std::cout << "Virtual GPU";
+                    break;
+                case vk::PhysicalDeviceType::eOther:
+                    std::cout << "Other";
+                    break;
+            }
+            std::cout << "\n\tQueue Families:";
+            int i = 0;
+            for (const auto& qfam : device.getQueueFamilyProperties()) {
+                std::cout << "\n\t\tQ" << i << " (count=" << qfam.queueCount << "):";
+                if (qfam.queueFlags & vk::QueueFlagBits::eGraphics) {
+                    std::cout << " graphics";
+                }
+                if (qfam.queueFlags & vk::QueueFlagBits::eCompute) {
+                    std::cout << " compute";
+                }
+                if (qfam.queueFlags & vk::QueueFlagBits::eTransfer) {
+                    std::cout << " transfer";
+                }
+                if (device.getSurfaceSupportKHR(i, surface)) {
+                    std::cout << " present";
+                }
+                ++i;
+            }
+            std::cout << std::endl;
+            ++deviceIndex;
+        }
+        std::cout << std::endl;
     }
 
     std::vector<const char*> getRequiredExtensions() {
