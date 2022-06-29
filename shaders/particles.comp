@@ -1,5 +1,8 @@
 #version 450
 
+
+#define PI 3.1415926538
+
 struct Particle {
     vec4 pos;
     vec3 vel;
@@ -16,8 +19,22 @@ layout (local_size_x = 256) in;
 layout (binding = 1) uniform UBO {
     uint particleCount;
     float delta;
-    float size2;
+    float range2;
+    float time;
+    float baseSpeed;
+    float speedVariation;
+    uint restart;
 } ubo;
+
+
+
+float noise(in vec2 coordinate, in float seed) {
+    const float phi = 1.61803398874989484820459 * 00000.1; // Golden Ratio   
+    const float pi  = 3.14159265358979323846264 * 00000.1; // pi
+    const float SRT = 1.41421356237309504880169 * 10000.0; // Square Root of Two
+    return fract(sin(dot(coordinate*seed, vec2(phi, pi)))*SRT);
+}
+
 
 
 void main() {
@@ -26,11 +43,26 @@ void main() {
 
     vec4 pos = particles[index].pos;
     vec3 vel = particles[index].vel;
+    float seed = fract(ubo.time);
 
     pos.xyz += vel * ubo.delta;
 
-    if (dot(pos.xyz, pos.xyz) >= ubo.size2) {
+    if (dot(pos.xyz, pos.xyz) >= ubo.range2 || ubo.restart == 1) {
         pos.xyz = vec3(0, 0, 0);
+        /*
+        float yaw = 2*PI * noise(vel.xy, seed);
+        float pitch = PI * noise(vel.xy, seed+0.2) - PI/2.0f;
+        float speed = noise(vel.yz, seed) + 1.0f;
+        vel = cos(pitch) * vec3(sin(yaw), 0, cos(yaw)) + sin(pitch) * vec3(0,1,0);
+        vel *= speed;
+        */
+        float speed = ubo.baseSpeed + ubo.speedVariation * noise(vel.xy, seed+0.25f);
+        vel = normalize(vec3(
+                    noise(vel.yz, seed)-0.5f,
+                    noise(vel.xz, seed)-0.5f,
+                    noise(vel.xy, seed)-0.5f
+                    ));
+        vel *= speed;
     }
     particles[index].pos = pos;
 

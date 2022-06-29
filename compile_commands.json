@@ -1,27 +1,47 @@
 [
 {
   "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin",
-  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/Application.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/Application.cpp",
-  "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/Application.cpp"
-},
-{
-  "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin",
-  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/ArgParser.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/ArgParser.cpp",
+  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/shaders/lib -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/ArgParser.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/ArgParser.cpp",
   "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/ArgParser.cpp"
 },
 {
   "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin",
-  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/Model.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/Model.cpp",
+  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/shaders/lib -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/BaseScreen.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/BaseScreen.cpp",
+  "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/BaseScreen.cpp"
+},
+{
+  "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin",
+  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/shaders/lib -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/ComputeParticleScreen.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/ComputeParticleScreen.cpp",
+  "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/ComputeParticleScreen.cpp"
+},
+{
+  "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin",
+  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/shaders/lib -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/ComputeSystem.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/ComputeSystem.cpp",
+  "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/ComputeSystem.cpp"
+},
+{
+  "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin",
+  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/shaders/lib -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/Model.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/Model.cpp",
   "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/Model.cpp"
 },
 {
   "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin",
-  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/VulkanContext.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/VulkanContext.cpp",
+  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/shaders/lib -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/ModelViewScreen.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/ModelViewScreen.cpp",
+  "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/ModelViewScreen.cpp"
+},
+{
+  "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin",
+  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/shaders/lib -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/VulkanBaseApp.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/VulkanBaseApp.cpp",
+  "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/VulkanBaseApp.cpp"
+},
+{
+  "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin",
+  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/shaders/lib -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/VulkanContext.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/VulkanContext.cpp",
   "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/VulkanContext.cpp"
 },
 {
   "directory": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin",
-  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/main.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/main.cpp",
+  "command": "/usr/bin/c++  -DUSE_IMGUI -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/bin -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src -I/usr/lib/cmake/glm -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/shaders/lib -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/imgui -I/home/ilker/code/vulkan/cmake/full-tutorial-hpp/libs/tinygltf  -Wall -g   -std=gnu++17 -o CMakeFiles/main.dir/src/main.cpp.o -c /home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/main.cpp",
   "file": "/home/ilker/code/vulkan/cmake/full-tutorial-hpp/src/main.cpp"
 },
 {

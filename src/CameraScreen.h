@@ -88,7 +88,7 @@ public:
             ImGui::Begin("Camera", &imguiShowCamera);
             ImGui::Text("Position %.3f %.3f %.3f", noclipCam.position.x, noclipCam.position.y, noclipCam.position.z);
             ImGui::Text("Yaw/Pitch %.3f %.3f", noclipCam.yaw, noclipCam.pitch);
-            ImGui::DragFloat("FOV", &fov, 0.005f, 10, 180, "%.3f");
+            ImGui::DragFloat("FOV", &fov, 0.5f, 10, 180, "%.3f");
             ImGui::End();
         }
     }

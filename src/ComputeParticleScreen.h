@@ -18,7 +18,7 @@ private:
 
     ComputeSystem compute;
     vk::Buffer* computeSSBO;
-    void* computeUBOmap;
+    FrameUniform* computeUBO;
 
     FrameUniform graphicsUniform;
 
@@ -29,8 +29,12 @@ private:
     uint32_t particleCount = 125000;
     const uint32_t maxParticleCount = 256 * 1024;
 
-    float colorShift = 0.0f;
+    float colorShift = 0.25f;
     float particleRange = 5.0f;
+    float bgBrightness = 0.125f;
+    float baseSpeed = 1.0f;
+    float speedVariation = 1.0f;
+    float restartParticles = false;
 
 public:
     ComputeParticleScreen(VulkanBaseApp* app);

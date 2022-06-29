@@ -12,13 +12,16 @@ set(CMAKE_CXX_FLAGS "-Wall -g")
 
 
 # COMPILE OPTIONS
-option(USE_IMGUI "Enable Dear Imgui" ON)
-option(USE_SHADERC "Enable shaderc for compiling GLSL at run-time" OFF)
+option(USE_IMGUI "Enable Dear Imgui for a nice graphical user interface" ON)
+option(USE_SHADERC "Enable shaderc for compiling GLSL shaders at run-time" OFF)
 
 
 #######################################################################
 #                              LIBRARIES                              #
 #######################################################################
+
+# GLSL shaders
+list(APPEND EXTRA_INCLUDES "${PROJECT_SOURCE_DIR}/shaders/lib")
 
 if(USE_IMGUI)
     # add the MuhLib library

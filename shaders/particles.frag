@@ -1,6 +1,6 @@
 #version 450
 
-#include "hsv.glsl"
+#include "lib/hsv.glsl"
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 view;

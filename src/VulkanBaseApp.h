@@ -64,6 +64,7 @@ class VulkanBaseApp : public VulkanContext {
 public:
     GLFWwindow* window;
     float time;
+    float delta;
     int framesPerSecond = 0;
 
     // Currently active screen
@@ -200,7 +201,6 @@ protected:
         static auto lastSecond = startTime;
         static auto lastTime = startTime;
         static int frames = 0;
-        float delta;
 
         while (!glfwWindowShouldClose(window)) {
             auto currentTime = std::chrono::high_resolution_clock::now();
@@ -471,18 +471,16 @@ protected:
         }
     }
 
-    void recordCommandBuffer(size_t i) {
+    void recordCommandBuffer(vk::CommandBuffer commandBuffer, size_t imageIndex) {
         vk::CommandBufferBeginInfo beginInfo = {};
         beginInfo.flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse;
 
         try {
-            commandBuffers[i].begin(beginInfo);
+            commandBuffer.begin(beginInfo);
         }
         catch (vk::SystemError const &err) {
             throw std::runtime_error("Failed to begin recording command buffer!");
         }
-
-        vk::CommandBuffer commandBuffer = commandBuffers[i];
 
         vk::Viewport viewport(
                 0.0f, 0.0f, 
@@ -503,7 +501,7 @@ protected:
         };
         vk::RenderPassBeginInfo renderPassInfo(
                 renderPass, 
-                swapChainFramebuffers[i],
+                swapChainFramebuffers[imageIndex],
                 vk::Rect2D({0, 0}, swapChainExtent),
                 std::size(clearValues), clearValues
                 );
@@ -556,9 +554,9 @@ protected:
 
         (void) device->resetFences(1, &inFlightFences[currentFrame]);
 
-        recordCommandBuffer(imageIndex);
+        recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
 
-        vk::CommandBuffer* bufferToSubmit = &commandBuffers[imageIndex];
+        vk::CommandBuffer* bufferToSubmit = &commandBuffers[currentFrame];
         if (screen) {
             screen->submitGraphics(bufferToSubmit, currentFrame);
         } else {

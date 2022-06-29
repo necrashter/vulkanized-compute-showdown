@@ -50,29 +50,18 @@ vk::Buffer* ComputeSystem::createShaderStorage(const void* input, size_t size) {
             vk::ShaderStageFlagBits::eCompute,
             nullptr
             );
-    bufferInfos.emplace_back(storage.buffer, 0, storage.size);
-    descriptorTypes.emplace_back(vk::DescriptorType::eStorageBuffer);
+    descriptors.push_back(&storage);
 
     return &storage.buffer;
 }
 
 
-void* ComputeSystem::createUniformBuffer(size_t size) {
+FrameUniform* ComputeSystem::createUniformBuffer(size_t size) {
     if (size == 0) {
         throw std::runtime_error("Compute Shader Uniform Buffer size is 0");
     }
-    uniformBuffers.emplace_back();
+    uniformBuffers.emplace_back(context, size);
     auto& storage = uniformBuffers.back();
-
-    context->createBuffer(
-            size,
-            vk::BufferUsageFlagBits::eUniformBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            storage.buffer, storage.memory
-            );
-
-    storage.size = size;
-    storage.mapping = context->device->mapMemory(storage.memory, 0, size);
 
     uint32_t bindingIndex = (uint32_t) bindings.size();
     bindings.emplace_back(
@@ -81,10 +70,9 @@ void* ComputeSystem::createUniformBuffer(size_t size) {
             vk::ShaderStageFlagBits::eCompute,
             nullptr
             );
-    bufferInfos.emplace_back(storage.buffer, 0, storage.size);
-    descriptorTypes.emplace_back(vk::DescriptorType::eUniformBuffer);
+    descriptors.push_back(&storage);
 
-    return storage.mapping;
+    return &storage;
 }
 
 
@@ -97,11 +85,11 @@ void ComputeSystem::finalizeLayout() {
     // ---------------------------------------------------------------
 
     vk::DescriptorPoolSize poolSizes[] = {
-        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, uniformBuffers.size()),
-        vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, storageBuffers.size()),
+        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT * uniformBuffers.size()),
+        vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, MAX_FRAMES_IN_FLIGHT * storageBuffers.size()),
     };
     vk::DescriptorPoolCreateInfo poolCreateInfo({},
-            1,
+            MAX_FRAMES_IN_FLIGHT,
             std::size(poolSizes), poolSizes);
     try {
         descriptorPool = context->device->createDescriptorPool(poolCreateInfo);
@@ -123,26 +111,38 @@ void ComputeSystem::finalizeLayout() {
     // ---------------------------------------------------------------
 
     try {
-        vk::DescriptorSetLayout layouts[] = { descriptorSetLayout };
-        descriptorSet = context->device->allocateDescriptorSets(vk::DescriptorSetAllocateInfo(
+        std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+        descriptorSets = context->device->allocateDescriptorSets(vk::DescriptorSetAllocateInfo(
                     descriptorPool,
-                    std::size(layouts), layouts))[0];
+                    layouts.size(), layouts.data()));
     } catch (vk::SystemError const &err) {
         throw std::runtime_error("failed to allocate descriptor sets!");
     }
 
-    {
+    for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
+        std::vector<vk::DescriptorBufferInfo> bufferInfos(
+                descriptors.size()
+                );
         std::vector<vk::WriteDescriptorSet> descriptorWrites(
-                bufferInfos.size(), 
+                descriptors.size(),
                 vk::WriteDescriptorSet(
-                        descriptorSet, 0, 0, 1, {},
+                        descriptorSets[frame], 0, 0, 1, {},
                         nullptr, nullptr
                         )
                 );
-        for (uint32_t i = 0; i < bufferInfos.size(); ++i) {
-            descriptorWrites[i].descriptorType = descriptorTypes[i];
+        for (uint32_t i = 0; i < descriptors.size(); ++i) {
             descriptorWrites[i].dstBinding = i;
             descriptorWrites[i].pBufferInfo = &bufferInfos[i];
+            if (descriptors[i]->type == Descriptor::eFrameUniform) {
+                descriptorWrites[i].descriptorType = vk::DescriptorType::eUniformBuffer;
+                bufferInfos[i].buffer = ((FrameUniform*)descriptors[i])->buffers[frame];
+                bufferInfos[i].range = ((FrameUniform*)descriptors[i])->size;
+            }
+            else if (descriptors[i]->type == Descriptor::eSSBO) {
+                descriptorWrites[i].descriptorType = vk::DescriptorType::eStorageBuffer;
+                bufferInfos[i].buffer = ((ComputeStorage*)descriptors[i])->buffer;
+                bufferInfos[i].range = ((ComputeStorage*)descriptors[i])->size;
+            }
         }
         context->device->updateDescriptorSets(
                 descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
@@ -175,149 +175,150 @@ void ComputeSystem::addPipeline(const std::vector<char>& shaderCode, const char*
 }
 
 
+std::vector<vk::BufferMemoryBarrier> ComputeSystem::getMemoryBarriers(vk::BufferMemoryBarrier temp, uint32_t frame) {
+    std::vector<vk::BufferMemoryBarrier> barriers(descriptors.size(), temp);
+    for (uint32_t i = 0; i < descriptors.size(); ++i) {
+        if (descriptors[i]->type == Descriptor::eSSBO) {
+            auto obj = ((ComputeStorage*)descriptors[i]);
+            barriers[i].buffer = obj->buffer;
+            barriers[i].size = obj->size;
+        }
+        else if (descriptors[i]->type == Descriptor::eFrameUniform) {
+            auto obj = ((FrameUniform*)descriptors[i]);
+            barriers[i].buffer = obj->buffers[frame];
+            barriers[i].size = obj->size;
+        }
+    }
+    return barriers;
+}
+
+
 void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_t groups_z) {
     // Create Command Pool & Buffer
     {
         vk::CommandPoolCreateInfo poolInfo({}, context->queueFamilyIndices.compute);
         commandPool = context->device->createCommandPool(poolInfo);
 
-        commandBuffer = context->device->allocateCommandBuffers(
+        commandBuffers = context->device->allocateCommandBuffers(
                 vk::CommandBufferAllocateInfo(
                     commandPool,
                     vk::CommandBufferLevel::ePrimary,
-                    1
-                    ))[0];
+                    MAX_FRAMES_IN_FLIGHT
+                    ));
     }
 
     uint32_t graphicsQindex = context->queueFamilyIndices.graphics;
     uint32_t computeQindex = context->queueFamilyIndices.compute;
 
-    // for some reason we need simultaneous use
-    vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
-    if (commandBuffer.begin(&beginInfo) != vk::Result::eSuccess) {
-        throw std::runtime_error("Failed to begin recording to compute command buffer");
-    }
+    for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
+        vk::CommandBuffer commandBuffer = commandBuffers[frame];
+        // for some reason we need simultaneous use
+        vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
+        if (commandBuffer.begin(&beginInfo) != vk::Result::eSuccess) {
+            throw std::runtime_error("Failed to begin recording to compute command buffer");
+        }
 
-    if (graphicsQindex != computeQindex) {
-        // need memory barrier if graphics and compute queues are different
-        // Make sure that graphics pipeline red the previous inputs
-        // Matching transfer acquire & release barriers must be present in the graphics pipeline
-        std::vector<vk::BufferMemoryBarrier> barriers(
-                bufferInfos.size(),
-                vk::BufferMemoryBarrier(
+        if (graphicsQindex != computeQindex) {
+            // need memory barrier if graphics and compute queues are different
+            // Make sure that graphics pipeline red the previous inputs
+            // Matching transfer acquire & release barriers must be present in the graphics pipeline
+            std::vector<vk::BufferMemoryBarrier> barriers = getMemoryBarriers(
+                    vk::BufferMemoryBarrier(
                         // source mask, destination mask
                         {}, vk::AccessFlagBits::eShaderWrite,
                         // source and destination queues
                         graphicsQindex, computeQindex,
                         // buffer range
                         VK_NULL_HANDLE, 0, 0
-                        )
-                );
-        for (uint32_t i = 0; i < bufferInfos.size(); ++i) {
-            barriers[i].buffer = bufferInfos[i].buffer;
-            barriers[i].size = bufferInfos[i].range;
+                        ),
+                    frame
+                    );
+            commandBuffer.pipelineBarrier(
+                    // vertex input is not supported by dedicated compute queue families
+                    vk::PipelineStageFlagBits::eDrawIndirect,
+                    vk::PipelineStageFlagBits::eComputeShader,
+                    {}, // dependency flags
+                    0, nullptr, barriers.size(), barriers.data(), 0, nullptr);
         }
-        commandBuffer.pipelineBarrier(
-                // vertex input is not supported by dedicated compute queue families
-                vk::PipelineStageFlagBits::eDrawIndirect,
-                vk::PipelineStageFlagBits::eComputeShader,
-                {}, // dependency flags
-                0, nullptr, barriers.size(), barriers.data(), 0, nullptr);
-    }
 
-    commandBuffer.bindDescriptorSets(
-            vk::PipelineBindPoint::eCompute,    // Bind point
-            pipelineLayout,             // Pipeline Layout
-            0,                                  // First descriptor set
-            { descriptorSet },          // List of descriptor sets
-            {});                                // Dynamic offsets
+        commandBuffer.bindDescriptorSets(
+                vk::PipelineBindPoint::eCompute,    // Bind point
+                pipelineLayout,             // Pipeline Layout
+                0,                                  // First descriptor set
+                { descriptorSets[frame] },          // List of descriptor sets
+                {});                                // Dynamic offsets
 
-    {
-        std::vector<vk::BufferMemoryBarrier> barriers(
-                bufferInfos.size(),
-                vk::BufferMemoryBarrier(
+        {
+            std::vector<vk::BufferMemoryBarrier> barriers = getMemoryBarriers(
+                    vk::BufferMemoryBarrier(
                         // source mask, destination mask
                         vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead,
                         // source and destination queues
                         computeQindex, computeQindex,
                         // buffer range
                         VK_NULL_HANDLE, 0, 0
-                        )
-                );
-        for (uint32_t i = 0; i < bufferInfos.size(); ++i) {
-            barriers[i].buffer = bufferInfos[i].buffer;
-            barriers[i].size = bufferInfos[i].range;
+                        ),
+                    frame
+                    );
+
+            auto pipelineIt = pipelines.begin();
+            commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelineIt);
+            commandBuffer.dispatch(groups_x, groups_y, groups_z);
+            // Need barriers between passes
+            for (; pipelineIt != pipelines.end(); ++pipelineIt) {
+                commandBuffer.pipelineBarrier(
+                        vk::PipelineStageFlagBits::eComputeShader,
+                        vk::PipelineStageFlagBits::eComputeShader,
+                        {}, // dependency flags
+                        0, nullptr, barriers.size(), barriers.data(), 0, nullptr);
+            }
         }
 
-        auto pipelineIt = pipelines.begin();
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelineIt);
-        commandBuffer.dispatch(groups_x, groups_y, groups_z);
-        // Need barriers between passes
-        for (; pipelineIt != pipelines.end(); ++pipelineIt) {
-            commandBuffer.pipelineBarrier(
-                    vk::PipelineStageFlagBits::eComputeShader,
-                    vk::PipelineStageFlagBits::eComputeShader,
-                    {}, // dependency flags
-                    0, nullptr, barriers.size(), barriers.data(), 0, nullptr);
-        }
-    }
-
-    if (graphicsQindex != computeQindex) {
-        // Make sure that graphics pipeline doesn't read incomplete data
-        std::vector<vk::BufferMemoryBarrier> barriers(
-                bufferInfos.size(),
-                vk::BufferMemoryBarrier(
+        if (graphicsQindex != computeQindex) {
+            // Make sure that graphics pipeline doesn't read incomplete data
+            std::vector<vk::BufferMemoryBarrier> barriers = getMemoryBarriers(
+                    vk::BufferMemoryBarrier(
                         // source mask, destination mask
                         vk::AccessFlagBits::eShaderWrite, {},
                         // source and destination queues
                         computeQindex, graphicsQindex,
                         // buffer range
                         VK_NULL_HANDLE, 0, 0
-                        )
-                );
-        for (uint32_t i = 0; i < bufferInfos.size(); ++i) {
-            barriers[i].buffer = bufferInfos[i].buffer;
-            barriers[i].size = bufferInfos[i].range;
+                        ),
+                    frame
+                    );
+            commandBuffer.pipelineBarrier(
+                    vk::PipelineStageFlagBits::eComputeShader,
+                    vk::PipelineStageFlagBits::eDrawIndirect,
+                    {}, // dependency flags
+                    0, nullptr, barriers.size(), barriers.data(), 0, nullptr);
         }
-        commandBuffer.pipelineBarrier(
-                vk::PipelineStageFlagBits::eComputeShader,
-                vk::PipelineStageFlagBits::eDrawIndirect,
-                {}, // dependency flags
-                0, nullptr, barriers.size(), barriers.data(), 0, nullptr);
-    }
 
-    commandBuffer.end();
+        commandBuffer.end();
 
-    // Create the corresponding barriers for graphics pipeline
-    {
-        graphicsAcquireBarriers.resize(
-                bufferInfos.size(),
+        // Create the corresponding barriers for graphics pipeline
+        graphicsAcquireBarriers[frame] = getMemoryBarriers(
                 vk::BufferMemoryBarrier(
-                        // source mask, destination mask
-                        {}, vk::AccessFlagBits::eVertexAttributeRead,
-                        // source and destination queues
-                        computeQindex, graphicsQindex,
-                        // buffer range
-                        VK_NULL_HANDLE, 0, 0
-                        )
+                    // source mask, destination mask
+                    {}, vk::AccessFlagBits::eVertexAttributeRead,
+                    // source and destination queues
+                    computeQindex, graphicsQindex,
+                    // buffer range
+                    VK_NULL_HANDLE, 0, 0
+                    ),
+                frame
                 );
-        graphicsReleaseBarriers.resize(
-                bufferInfos.size(),
+        graphicsReleaseBarriers[frame] = getMemoryBarriers(
                 vk::BufferMemoryBarrier(
-                        // source mask, destination mask
-                        vk::AccessFlagBits::eVertexAttributeRead, {},
-                        // source and destination queues
-                        graphicsQindex, computeQindex,
-                        // buffer range
-                        VK_NULL_HANDLE, 0, 0
-                        )
+                    // source mask, destination mask
+                    vk::AccessFlagBits::eVertexAttributeRead, {},
+                    // source and destination queues
+                    graphicsQindex, computeQindex,
+                    // buffer range
+                    VK_NULL_HANDLE, 0, 0
+                    ),
+                frame
                 );
-        for (uint32_t i = 0; i < bufferInfos.size(); ++i) {
-            graphicsAcquireBarriers[i].buffer = bufferInfos[i].buffer;
-            graphicsAcquireBarriers[i].size = bufferInfos[i].range;
-            graphicsReleaseBarriers[i].buffer = bufferInfos[i].buffer;
-            graphicsReleaseBarriers[i].size = bufferInfos[i].range;
-        }
     }
 
     // Immediately release the buffers for initial synchronization
@@ -332,41 +333,35 @@ void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_
 
         oneShot.begin(beginInfo);
 
-        // std::vector<vk::BufferMemoryBarrier> acquireBarrier(
-        //         bufferInfos.size(),
-        //         vk::BufferMemoryBarrier(
-        //                 // source mask, destination mask
-        //                 {}, vk::AccessFlagBits::eShaderWrite,
-        //                 // source and destination queues
-        //                 graphicsQindex, computeQindex,
-        //                 // buffer range
-        //                 VK_NULL_HANDLE, 0, 0
-        //                 )
-        //         );
-        // for (uint32_t i = 0; i < bufferInfos.size(); ++i) {
-        //     acquireBarrier[i].buffer = bufferInfos[i].buffer;
-        //     acquireBarrier[i].size = bufferInfos[i].range;
-        // }
-        // oneShot.pipelineBarrier(
-        //         vk::PipelineStageFlagBits::eDrawIndirect,
-        //         vk::PipelineStageFlagBits::eComputeShader,
-        //         {}, // dependency flags
-        //         0, nullptr, acquireBarrier.size(), acquireBarrier.data(), 0, nullptr);
-
+        uint32_t totalReleases = storageBuffers.size() + uniformBuffers.size() * MAX_FRAMES_IN_FLIGHT;
         std::vector<vk::BufferMemoryBarrier> releaseBarrier(
-                bufferInfos.size(),
+                totalReleases,
                 vk::BufferMemoryBarrier(
-                        // source mask, destination mask
-                        vk::AccessFlagBits::eShaderWrite, {},
-                        // source and destination queues
-                        computeQindex, graphicsQindex,
-                        // buffer range
-                        VK_NULL_HANDLE, 0, 0
-                        )
+                    // source mask, destination mask
+                    vk::AccessFlagBits::eShaderWrite, {},
+                    // source and destination queues
+                    computeQindex, graphicsQindex,
+                    // buffer range
+                    VK_NULL_HANDLE, 0, 0
+                    )
                 );
-        for (uint32_t i = 0; i < bufferInfos.size(); ++i) {
-            releaseBarrier[i].buffer = bufferInfos[i].buffer;
-            releaseBarrier[i].size = bufferInfos[i].range;
+
+        uint32_t i = 0;
+        for (Descriptor* descriptor : descriptors) {
+            if (descriptor->type == Descriptor::eSSBO) {
+                auto obj = ((ComputeStorage*)descriptor);
+                releaseBarrier[i].buffer = obj->buffer;
+                releaseBarrier[i].size = obj->size;
+            }
+            else if (descriptors[i]->type == Descriptor::eFrameUniform) {
+                auto obj = ((FrameUniform*)descriptor);
+                for (uint32_t j = 0; j < MAX_FRAMES_IN_FLIGHT; ++j) {
+                    releaseBarrier[i].buffer = obj->buffers[j];
+                    releaseBarrier[i].size = obj->size;
+                    ++i;
+                }
+            }
+            ++i;
         }
 
         oneShot.pipelineBarrier(
@@ -414,11 +409,4 @@ ComputeSystem::~ComputeSystem() {
         context->device->destroyBuffer(storage.buffer);
         context->device->freeMemory(storage.memory);
     }
-
-    for (auto storage : uniformBuffers) {
-        context->device->unmapMemory(storage.memory);
-        context->device->destroyBuffer(storage.buffer);
-        context->device->freeMemory(storage.memory);
-    }
-
 }

@@ -2,26 +2,20 @@
 
 #include "VulkanContext.h"
 #include <vulkan/vulkan.hpp>
+#include "FrameUniform.h"
 
 #include <glm/glm.hpp>
 
 
 class ComputeSystem {
-    struct ComputeStorage {
+    class ComputeStorage : public Descriptor {
+    public:
         size_t size;
         vk::Buffer buffer;
         vk::DeviceMemory memory;
 
-        ComputeStorage(): size(0), buffer(VK_NULL_HANDLE), memory(VK_NULL_HANDLE) {}
-    };
-
-    struct ComputeUniform {
-        size_t size;
-        void* mapping;
-        vk::Buffer buffer;
-        vk::DeviceMemory memory;
-
-        ComputeUniform(): size(0), mapping(nullptr), buffer(VK_NULL_HANDLE), memory(VK_NULL_HANDLE) {}
+        ComputeStorage(): Descriptor(eSSBO),
+            size(0), buffer(VK_NULL_HANDLE), memory(VK_NULL_HANDLE) {}
     };
 
 private:
@@ -29,32 +23,33 @@ private:
 
     vk::DescriptorSetLayout descriptorSetLayout;
     vk::DescriptorPool descriptorPool;
-    vk::DescriptorSet descriptorSet;
+    std::vector<vk::DescriptorSet> descriptorSets;
     vk::PipelineLayout pipelineLayout;
 
     // Need special command buffer and hence command pool
     vk::CommandPool commandPool;
-    vk::CommandBuffer commandBuffer;
+    std::vector<vk::CommandBuffer> commandBuffers;
 
     // Shader storage buffer objects
     std::vector<ComputeStorage> storageBuffers;
     // Uniform buffers
-    std::vector<ComputeUniform> uniformBuffers;
+    std::vector<FrameUniform> uniformBuffers;
 
     std::vector<vk::DescriptorSetLayoutBinding> bindings;
-    std::vector<vk::DescriptorBufferInfo> bufferInfos;
-    std::vector<vk::DescriptorType> descriptorTypes;
+    std::vector<Descriptor*> descriptors;
 
     std::vector<vk::Pipeline> pipelines;
+
+    std::vector<vk::BufferMemoryBarrier> getMemoryBarriers(vk::BufferMemoryBarrier temp, uint32_t frame);
 
 public:
     vk::Semaphore sem;
 
 
     // Barriers to acquire the shader storage buffer for graphics pipeline
-    std::vector<vk::BufferMemoryBarrier> graphicsAcquireBarriers;
+    std::vector<vk::BufferMemoryBarrier> graphicsAcquireBarriers[MAX_FRAMES_IN_FLIGHT];
     // Barriers to release the shader storage buffer for graphics pipeline
-    std::vector<vk::BufferMemoryBarrier> graphicsReleaseBarriers;
+    std::vector<vk::BufferMemoryBarrier> graphicsReleaseBarriers[MAX_FRAMES_IN_FLIGHT];
 
     // Initializes the compute system with given Vulkan context.
     ComputeSystem(VulkanContext* context);
@@ -65,7 +60,7 @@ public:
 
     // Create uniform storage buffer
     // Return pointer (binding point for uniform buffer)
-    void* createUniformBuffer(size_t size);
+    FrameUniform* createUniformBuffer(size_t size);
 
     // After creating buffers, call this to finalize the plpeline layout.
     // Creates descriptor sets, etc.
@@ -80,8 +75,8 @@ public:
     // Signal the semaphore for kickstart
     void signalSemaphore();
 
-    inline vk::CommandBuffer* const getCommandBufferPointer() {
-        return &commandBuffer;
+    inline vk::CommandBuffer* const getCommandBufferPointer(uint32_t i) {
+        return &commandBuffers[i];
     }
 
     ~ComputeSystem();

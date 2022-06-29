@@ -1,9 +1,14 @@
 #include "ComputeParticleScreen.h"
+#include "glsl.h"
 
 struct ComputeUBO {
     alignas(4) glm::uint32 particleCount;
     alignas(4) glm::float32 delta;
     alignas(4) glm::float32 range2;
+    alignas(4) glm::float32 time;
+    alignas(4) glm::float32 baseSpeed;
+    alignas(4) glm::float32 speedVariation;
+    alignas(4) glm::uint32 restart;
 };
 
 struct FrameUBO {
@@ -46,11 +51,11 @@ namespace {
         std::vector<Particle> particles(count);
         for (uint32_t i = 0; i < count; ++i) {
             particles[i].pos = glm::vec4(
-                    100, 0, 0,
+                    0, 0, 0,
                     rand()/(float)RAND_MAX * 4.0f + 4.0f
                     );
-            particles[i].vel = glm::vec3(randcoor(), randcoor(), randcoor());
-            particles[i].color = rand()/(float)RAND_MAX * 0.25 + 0.25;
+            particles[i].vel = glm::normalize(glm::vec3(randcoor(), randcoor(), randcoor()));
+            particles[i].color = rand()/(float)RAND_MAX * 0.25;
         }
         return particles;
     }
@@ -210,7 +215,7 @@ void ComputeParticleScreen::prepareComputePipeline() {
     auto shaderData = generateShaderData(maxParticleCount);
 
     computeSSBO = compute.createShaderStorage(shaderData.data(), sizeof(Particle) * shaderData.size());
-    computeUBOmap = compute.createUniformBuffer(sizeof(ComputeUBO));
+    computeUBO = compute.createUniformBuffer(sizeof(ComputeUBO));
     compute.finalizeLayout();
 
     compute.addPipeline(readBinaryFile("shaders/particles.comp.spv"), "main");
@@ -234,10 +239,18 @@ void ComputeParticleScreen::recordRenderCommands(vk::RenderPassBeginInfo renderP
                 vk::PipelineStageFlagBits::eVertexInput,
                 {},
                 0, nullptr,
-                compute.graphicsAcquireBarriers.size(), compute.graphicsAcquireBarriers.data(),
+                compute.graphicsAcquireBarriers[index].size(), compute.graphicsAcquireBarriers[index].data(),
                 0, nullptr);
     }
 
+    glm::vec3 bgColor = glsl::hsv2rgb(glm::vec3(colorShift, 0.25f, bgBrightness));
+    vk::ClearValue clearValues[] = {
+        vk::ClearValue(vk::ClearColorValue(std::array<float, 4>{
+                    bgColor.r, bgColor.r, bgColor.b,
+                    1.0f })),
+            vk::ClearValue(vk::ClearDepthStencilValue(1.0f, 0)),
+    };
+    renderPassInfo.pClearValues = clearValues;
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics.pipeline);
@@ -256,7 +269,7 @@ void ComputeParticleScreen::recordRenderCommands(vk::RenderPassBeginInfo renderP
                 vk::PipelineStageFlagBits::eComputeShader,
                 {},
                 0, nullptr,
-                compute.graphicsReleaseBarriers.size(), compute.graphicsReleaseBarriers.data(),
+                compute.graphicsReleaseBarriers[index].size(), compute.graphicsReleaseBarriers[index].data(),
                 0, nullptr);
     }
 }
@@ -264,16 +277,22 @@ void ComputeParticleScreen::recordRenderCommands(vk::RenderPassBeginInfo renderP
 
 void ComputeParticleScreen::update(float delta) {
     CameraScreen::update(delta);
-    ComputeUBO* computeUbo = (ComputeUBO*)computeUBOmap;
-    computeUbo->particleCount = particleCount;
-    computeUbo->delta = delta;
-    computeUbo->range2 = particleRange * particleRange;
 }
 
 
 void ComputeParticleScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32_t currentFrame) {
     updateUniformBuffer(currentFrame);
     {
+        ComputeUBO* computeUbo = (ComputeUBO*)computeUBO->mappings[currentFrame];
+        computeUbo->particleCount = particleCount;
+        computeUbo->delta = app->delta;
+        computeUbo->range2 = particleRange * particleRange;
+        computeUbo->time = app->time;
+        computeUbo->baseSpeed = baseSpeed;
+        computeUbo->speedVariation = speedVariation;
+        computeUbo->restart = restartParticles;
+        restartParticles = false;
+
         FrameUBO* ubo = (FrameUBO*)graphicsUniform.mappings[currentFrame];
         ubo->colorShift = colorShift;
     }
@@ -316,7 +335,7 @@ void ComputeParticleScreen::submitGraphics(const vk::CommandBuffer* bufferToSubm
 
         app->computeQueue.submit(vk::SubmitInfo(
                 std::size(waitSemaphores), waitSemaphores, waitStages,
-                1, compute.getCommandBufferPointer(),
+                1, compute.getCommandBufferPointer(currentFrame),
                 std::size(signalSemaphores), signalSemaphores),
                 // signal fence here, we're done with this frame
                 app->inFlightFences[currentFrame]);
@@ -339,9 +358,20 @@ void ComputeParticleScreen::imgui() {
     }
     if (showParticleSettings) {
         ImGui::Begin("Particles", &showParticleSettings);
+
+        ImGui::DragFloat("BG Brightness", &bgBrightness, 0.005f, 0.0f, 1.0f, "%.3f");
         ImGui::DragFloat("Color Shift", &colorShift, 0.005f, 0.0f, 1.0f, "%.3f");
+
+        ImGui::Separator();
+
+        ImGui::DragFloat("Base Speed", &baseSpeed, 0.005f, 0.0f, 10.0f, "%.3f");
+        ImGui::DragFloat("Speed Variation", &speedVariation, 0.005f, 0.0f, 10.0f, "%.3f");
         ImGui::DragFloat("Range", &particleRange, 0.25f, 1.0f, 100.0f, "%.3f");
+
+        ImGui::Separator();
+
         ImGui::DragInt("Particle Count", (int*) &particleCount, 100, 1, maxParticleCount);
+        if (ImGui::Button("Restart")) restartParticles = true;
         ImGui::End();
     }
 }

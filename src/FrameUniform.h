@@ -2,35 +2,49 @@
 
 #include "VulkanBaseApp.h"
 
-class FrameUniform {
+class Descriptor {
 public:
-    VulkanContext* const app;
+    enum Type {
+        eFrameUniform,
+        eSSBO,
+    };
+
+    Type type;
+    Descriptor(Type t): type(t) {}
+};
+
+class FrameUniform : public Descriptor {
+public:
+    VulkanContext* const context;
+    size_t size;
     std::vector<vk::Buffer> buffers;
     std::vector<vk::DeviceMemory> memories;
 
     std::vector<void*> mappings;
 
-    FrameUniform(VulkanContext* app, size_t size) : app(app) {
+    FrameUniform(VulkanContext* context, size_t size) : 
+        Descriptor(eFrameUniform),
+        context(context), size(size) {
         vk::DeviceSize uniformBufferSize = size;
         buffers.resize(MAX_FRAMES_IN_FLIGHT);
         memories.resize(MAX_FRAMES_IN_FLIGHT);
         mappings.resize(MAX_FRAMES_IN_FLIGHT);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            app->createBuffer(
+            context->createBuffer(
                     uniformBufferSize,
                     vk::BufferUsageFlagBits::eUniformBuffer,
                     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
                     buffers[i], memories[i]
                     );
-            mappings[i] = app->device->mapMemory(memories[i], 0, size);
+            mappings[i] = context->device->mapMemory(memories[i], 0, size);
         }
     }
 
     ~FrameUniform() {
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            app->device->destroyBuffer(buffers[i]);
-            app->device->freeMemory(memories[i]);
+            context->device->destroyBuffer(buffers[i]);
+            context->device->freeMemory(memories[i]);
         }
     }
 };
