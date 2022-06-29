@@ -6,18 +6,18 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
     vec3 cameraPosition;
 } ubo;
 
-layout(location = 0) in vec3 pos;
+layout(location = 0) in vec4 pos;
 layout(location = 1) in vec3 vel;
+layout(location = 2) in float color;
 
 layout(location = 0) out vec3 fragPos;
-layout(location = 1) out vec3 fragVel;
+layout(location = 1) out float fragColor;
 
 void main() {
-    vec4 worldpos = vec4(pos, 1.0);
-    gl_Position = ubo.proj * ubo.view * worldpos;
-	gl_PointSize = 8.0;
+    gl_Position = ubo.proj * ubo.view * vec4(pos.xyz, 1.0);
+    gl_PointSize = pos.w;
 
-    fragPos = pos;
-	fragVel = vel;
+    fragPos = pos.xyz;
+    fragColor = color;
 }
 

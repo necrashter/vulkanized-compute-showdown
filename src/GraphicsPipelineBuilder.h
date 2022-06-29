@@ -44,12 +44,13 @@ public:
                 VK_FALSE, {}, {}, {}, // Depth bias settings
                 1.0f /* line width */),
         multisampling({}, vk::SampleCountFlagBits::e1, VK_FALSE),
+        // Default blending
         colorBlendAttachment(
-                VK_FALSE, // blend enable
+                VK_TRUE, // blend enable
                 // Color blend: src and dst factors, blend operation
-                vk::BlendFactor::eZero, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+                vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha, vk::BlendOp::eAdd,
                 // Alpha blend: src and dst factors, blend operation
-                vk::BlendFactor::eZero, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+                vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
                 // Color write mask
                 vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA),
         colorBlending({},

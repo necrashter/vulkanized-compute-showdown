@@ -3,6 +3,7 @@
 #include "log.h"
 
 bool listGPUs = false;
+bool preferSingleQueueFamily = false;
 std::optional<int> selectedGPU = std::nullopt;
 
 /* 

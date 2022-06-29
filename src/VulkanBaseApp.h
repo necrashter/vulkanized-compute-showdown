@@ -56,6 +56,7 @@ struct SwapChainSupportDetails {
 
 
 extern bool listGPUs;
+extern bool preferSingleQueueFamily;
 extern std::optional<int> selectedGPU;
 
 
@@ -216,7 +217,6 @@ protected:
             }
 
             glfwPollEvents();
-            if (screen) screen->update(delta);
 
 #ifdef USE_IMGUI
             imguiOverlay.newFrame();
@@ -226,6 +226,9 @@ protected:
 
             ImGui::Render();
 #endif
+
+            if (screen) screen->update(delta);
+
             renderFrame();
             lastTime = currentTime;
         }
@@ -707,7 +710,7 @@ protected:
                 if (!indices.graphicsFamily.has_value()) indices.graphicsFamily = i;
             }
             if (compute) {
-                if (!indices.computeFamily.has_value() || !graphics)
+                if (!indices.computeFamily.has_value() || (!preferSingleQueueFamily && !graphics))
                     indices.computeFamily = i;
             }
             if (present) {

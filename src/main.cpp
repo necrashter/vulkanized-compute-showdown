@@ -15,13 +15,20 @@ int main(int argc, char** argv) {
     if (auto arg = argparser.getArgStr("screen")) {
         startingScreen = findScreen(*arg);
         if (startingScreen == nullptr) {
-            std::cout << "[INIT] Screen not found: " << *arg << std::endl;
+            TLOG("ArgParser") << "Screen not found: " << *arg << std::endl;
         }
     }
 
     if (auto arg = argparser.getArgBool("validation")) {
         enableValidationLayers = *arg;
-        std::cout << "[INIT] Explicitly " << (*arg ? "enabling" : "disabling") << " validation layer" << std::endl;
+        TLOG("ArgParser") << "Explicitly " << (*arg ? "enabling" : "disabling") << " validation layer" << std::endl;
+    }
+
+    if (auto arg = argparser.getArgBool("single-queue")) {
+        preferSingleQueueFamily = *arg;
+        TLOG("ArgParser") << "Prefer single queue family: " << (*arg
+                ? "On (Don't prefer dedicated queue families)"
+                : "Off (Prefer dedicated queue families)")  << std::endl;
     }
 
     if (argparser.hasArg("list-gpus")) {

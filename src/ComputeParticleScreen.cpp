@@ -1,12 +1,19 @@
 #include "ComputeParticleScreen.h"
 
 struct ComputeUBO {
-    alignas(16) glm::vec3 playerPos;
+    alignas(4) glm::uint32 particleCount;
+    alignas(4) glm::float32 delta;
+    alignas(4) glm::float32 range2;
+};
+
+struct FrameUBO {
+    alignas(4) glm::float32 colorShift;
 };
 
 struct Particle {
-    glm::vec3 pos;
-    glm::vec3 vel;
+    alignas(16) glm::vec4 pos;
+    alignas(16) glm::vec3 vel;
+    alignas(4)  glm::float32 color;
 };
 
 
@@ -19,11 +26,15 @@ namespace {
     constexpr vk::VertexInputAttributeDescription vertexAttributeDescriptions[] = {
         vk::VertexInputAttributeDescription(
                 0, 0, // location and binding
-                vk::Format::eR32G32B32Sfloat, offsetof(Particle, pos)),
+                vk::Format::eR32G32B32A32Sfloat, offsetof(Particle, pos)),
 
         vk::VertexInputAttributeDescription(
                 1, 0, // location and binding
                 vk::Format::eR32G32B32Sfloat, offsetof(Particle, vel)),
+
+        vk::VertexInputAttributeDescription(
+                2, 0, // location and binding
+                vk::Format::eR32Sfloat, offsetof(Particle, color)),
     };
 
     float randcoor() {
@@ -31,10 +42,15 @@ namespace {
     }
 
     std::vector<Particle> generateShaderData(uint32_t count) {
+        srand((unsigned) time(NULL));
         std::vector<Particle> particles(count);
         for (uint32_t i = 0; i < count; ++i) {
-            particles[i].pos = glm::vec3(randcoor(), randcoor(), randcoor());
+            particles[i].pos = glm::vec4(
+                    100, 0, 0,
+                    rand()/(float)RAND_MAX * 4.0f + 4.0f
+                    );
             particles[i].vel = glm::vec3(randcoor(), randcoor(), randcoor());
+            particles[i].color = rand()/(float)RAND_MAX * 0.25 + 0.25;
         }
         return particles;
     }
@@ -44,10 +60,15 @@ namespace {
 
 ComputeParticleScreen::ComputeParticleScreen(VulkanBaseApp* app):
     CameraScreen(app),
-    compute(app)
+    compute(app),
+    graphicsUniform(app, sizeof(FrameUBO))
 {
     prepareGraphicsPipeline();
     prepareComputePipeline();
+    noclipCam.position = glm::vec3(-6*1.7320508075688772, 6, 0);
+    noclipCam.pitch = -30;
+    noclipCam.yaw = 0.0;
+    noclipCam.update_vectors();
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -61,7 +82,7 @@ void ComputeParticleScreen::prepareGraphicsPipeline() {
 
     std::array<vk::DescriptorPoolSize, 1> poolSizes = {
         // UBO
-        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT),
+        vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT * 2),
     };
     vk::DescriptorPoolCreateInfo poolCreateInfo({},
             MAX_FRAMES_IN_FLIGHT,
@@ -75,13 +96,19 @@ void ComputeParticleScreen::prepareGraphicsPipeline() {
     // Create Descriptor Set Layout
     // ---------------------------------------------------------------
 
-    vk::DescriptorSetLayoutBinding uboBinding(
+    vk::DescriptorSetLayoutBinding bindings[] = {
+        vk::DescriptorSetLayoutBinding(
             0, vk::DescriptorType::eUniformBuffer, 1,
             vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            nullptr);
+            nullptr),
+        vk::DescriptorSetLayoutBinding(
+            1, vk::DescriptorType::eUniformBuffer, 1,
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            nullptr),
+    };
 
     try {
-        graphics.descriptorSetLayout = app->device->createDescriptorSetLayout({{}, 1, &uboBinding});
+        graphics.descriptorSetLayout = app->device->createDescriptorSetLayout({{}, std::size(bindings), bindings});
     } catch (vk::SystemError const &err) {
         throw std::runtime_error("Failed to create descriptor set layout");
     }
@@ -96,22 +123,27 @@ void ComputeParticleScreen::prepareGraphicsPipeline() {
                     static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
                     layouts.data()));
     } catch (vk::SystemError const &err) {
-        throw std::runtime_error("failed to allocate descriptor sets!");
+        throw std::runtime_error("Failed to allocate descriptor sets!");
     }
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vk::DescriptorBufferInfo bufferInfo(cameraUniform.buffers[i], 0, sizeof(CameraUBO));
+        vk::DescriptorBufferInfo frameUniformInfo(graphicsUniform.buffers[i], 0, sizeof(FrameUBO));
 
-        std::array<vk::WriteDescriptorSet, 1> descriptorWrites = {
+        vk::WriteDescriptorSet descriptorWrites[] = {
             // UBO
             vk::WriteDescriptorSet(
                     graphics.descriptorSets[i], 0, 0, 1, vk::DescriptorType::eUniformBuffer,
                     nullptr, // image info
                     &bufferInfo
                     ),
+            vk::WriteDescriptorSet(
+                    graphics.descriptorSets[i], 1, 0, 1, vk::DescriptorType::eUniformBuffer,
+                    nullptr, // image info
+                    &frameUniformInfo
+                    ),
         };
-        app->device->updateDescriptorSets(
-                descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+        app->device->updateDescriptorSets(std::size(descriptorWrites), descriptorWrites, 0, nullptr);
     }
 
     // Create Graphics Pipeline
@@ -136,6 +168,17 @@ void ComputeParticleScreen::prepareGraphicsPipeline() {
             "main"
         } 
     };
+
+    // Additive blend
+    pipelineBuilder.colorBlendAttachment.colorBlendOp = vk::BlendOp::eAdd;
+    pipelineBuilder.colorBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+    pipelineBuilder.colorBlendAttachment.dstColorBlendFactor = vk::BlendFactor::eOne;
+    pipelineBuilder.colorBlendAttachment.alphaBlendOp = vk::BlendOp::eAdd;
+    pipelineBuilder.colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+    pipelineBuilder.colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eOne;
+    // No depth test
+    pipelineBuilder.depthStencil.depthTestEnable = VK_FALSE;
+    pipelineBuilder.depthStencil.depthWriteEnable = VK_FALSE;
 
     pipelineBuilder.rasterizer.cullMode = vk::CullModeFlagBits::eNone;
     pipelineBuilder.inputAssembly.topology = vk::PrimitiveTopology::ePointList;
@@ -162,15 +205,16 @@ void ComputeParticleScreen::prepareGraphicsPipeline() {
 }
 
 
+
 void ComputeParticleScreen::prepareComputePipeline() {
-    auto shaderData = generateShaderData(particleCount);
+    auto shaderData = generateShaderData(maxParticleCount);
 
     computeSSBO = compute.createShaderStorage(shaderData.data(), sizeof(Particle) * shaderData.size());
     computeUBOmap = compute.createUniformBuffer(sizeof(ComputeUBO));
     compute.finalizeLayout();
 
     compute.addPipeline(readBinaryFile("shaders/particles.comp.spv"), "main");
-    compute.recordCommands(particleCount / workgroupSize, 1, 1);
+    compute.recordCommands(maxParticleCount / workgroupSize, 1, 1);
 
     // kickstart
     compute.signalSemaphore();
@@ -218,8 +262,21 @@ void ComputeParticleScreen::recordRenderCommands(vk::RenderPassBeginInfo renderP
 }
 
 
+void ComputeParticleScreen::update(float delta) {
+    CameraScreen::update(delta);
+    ComputeUBO* computeUbo = (ComputeUBO*)computeUBOmap;
+    computeUbo->particleCount = particleCount;
+    computeUbo->delta = delta;
+    computeUbo->range2 = particleRange * particleRange;
+}
+
+
 void ComputeParticleScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32_t currentFrame) {
     updateUniformBuffer(currentFrame);
+    {
+        FrameUBO* ubo = (FrameUBO*)graphicsUniform.mappings[currentFrame];
+        ubo->colorShift = colorShift;
+    }
 
     try {
         // Wait for compute shader to complete at vertex input stage (see kickstart)
@@ -269,6 +326,26 @@ void ComputeParticleScreen::submitGraphics(const vk::CommandBuffer* bufferToSubm
 }
 
 
+#ifdef USE_IMGUI
+void ComputeParticleScreen::imgui() {
+    static bool showParticleSettings = true;
+    CameraScreen::imgui();
+    if (ImGui::BeginMainMenuBar()) {
+        if (ImGui::BeginMenu("Scene")) {
+            ImGui::MenuItem("Particle Settings", NULL, &showParticleSettings);
+            ImGui::EndMenu();
+        }
+        ImGui::EndMainMenuBar();
+    }
+    if (showParticleSettings) {
+        ImGui::Begin("Particles", &showParticleSettings);
+        ImGui::DragFloat("Color Shift", &colorShift, 0.005f, 0.0f, 1.0f, "%.3f");
+        ImGui::DragFloat("Range", &particleRange, 0.25f, 1.0f, 100.0f, "%.3f");
+        ImGui::DragInt("Particle Count", (int*) &particleCount, 100, 1, maxParticleCount);
+        ImGui::End();
+    }
+}
+#endif
 
 ComputeParticleScreen::~ComputeParticleScreen() {
     // Graphics pipeline cleanup
@@ -279,3 +356,4 @@ ComputeParticleScreen::~ComputeParticleScreen() {
 
     app->device->destroySemaphore(graphics.sem);
 }
+

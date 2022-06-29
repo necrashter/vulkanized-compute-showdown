@@ -3,6 +3,7 @@
 
 #include "VulkanBaseApp.h"
 #include "Noclip.h"
+#include "FrameUniform.h"
 
 
 struct CameraUBO {
@@ -13,31 +14,18 @@ struct CameraUBO {
 
 
 class CameraScreen : public BaseScreen {
-private:
-    noclip::cam noclipCam;
-
 protected:
-    struct CameraUniform {
-        std::vector<vk::Buffer> buffers;
-        std::vector<vk::DeviceMemory> memories;
-    } cameraUniform;
+    noclip::cam noclipCam;
+    float fov = 60.0f;
+
+    FrameUniform cameraUniform;
+
 
 public:
     CameraScreen(VulkanBaseApp* app):
         BaseScreen(app),
-        noclipCam(app->window) {
-        vk::DeviceSize uniformBufferSize = sizeof(CameraUBO);
-        cameraUniform.buffers.resize(MAX_FRAMES_IN_FLIGHT);
-        cameraUniform.memories.resize(MAX_FRAMES_IN_FLIGHT);
-
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            app->createBuffer(
-                    uniformBufferSize,
-                    vk::BufferUsageFlagBits::eUniformBuffer,
-                    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                    cameraUniform.buffers[i], cameraUniform.memories[i]
-                    );
-        }
+        noclipCam(app->window),
+        cameraUniform(app, sizeof(CameraUBO)) {
     }
 
 
@@ -49,15 +37,13 @@ public:
         CameraUBO ubo {
             // glm::lookAt(cameraPosition, glm::vec3(0.0f, 0.0f, 0.0f), WORLD_UP),
             noclipCam.get_view_matrix(),
-            glm::perspective(glm::radians(60.0f), app->swapChainExtent.width / (float) app->swapChainExtent.height, 0.1f, 10.0f),
+            glm::perspective(glm::radians(fov), app->swapChainExtent.width / (float) app->swapChainExtent.height, 0.02f, 100.0f),
             noclipCam.position
         };
         // Y coordinate is inverted
         ubo.proj[1][1] *= -1;
 
-        void* data = app->device->mapMemory(cameraUniform.memories[index], 0, sizeof(ubo));
-        memcpy(data, &ubo, sizeof(ubo));
-        app->device->unmapMemory(cameraUniform.memories[index]);
+        memcpy(cameraUniform.mappings[index], &ubo, sizeof(ubo));
     }
 
     virtual void submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32_t currentFrame) override {
@@ -90,15 +76,23 @@ public:
 
 #ifdef USE_IMGUI
     virtual void imgui() override {
-    }
-#endif
-
-    virtual ~CameraScreen() {
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            app->device->destroyBuffer(cameraUniform.buffers[i]);
-            app->device->freeMemory(cameraUniform.memories[i]);
+        static bool imguiShowCamera = false;
+        if (ImGui::BeginMainMenuBar()) {
+            if (ImGui::BeginMenu("Scene")) {
+                ImGui::MenuItem("Camera Settings", NULL, &imguiShowCamera);
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
+        if (imguiShowCamera) {
+            ImGui::Begin("Camera", &imguiShowCamera);
+            ImGui::Text("Position %.3f %.3f %.3f", noclipCam.position.x, noclipCam.position.y, noclipCam.position.z);
+            ImGui::Text("Yaw/Pitch %.3f %.3f", noclipCam.yaw, noclipCam.pitch);
+            ImGui::DragFloat("FOV", &fov, 0.005f, 10, 180, "%.3f");
+            ImGui::End();
         }
     }
+#endif
 };
 
 #endif
