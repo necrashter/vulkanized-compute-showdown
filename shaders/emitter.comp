@@ -9,7 +9,6 @@ struct Particle {
     float color;
 };
 
-// Binding 0 : Position storage buffer
 layout(std140, binding = 0) buffer Pos {
     Particle particles[];
 };

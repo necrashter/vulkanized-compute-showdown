@@ -1,16 +1,11 @@
-#include "EmitterScreen.h"
+#include "NbodyScreen.h"
 #include "glsl.h"
-
+#include <random>
 
 namespace {
     struct ComputeUBO {
         alignas(4) glm::uint32 particleCount;
         alignas(4) glm::float32 delta;
-        alignas(4) glm::float32 range2;
-        alignas(4) glm::float32 time;
-        alignas(4) glm::float32 baseSpeed;
-        alignas(4) glm::float32 speedVariation;
-        alignas(4) glm::uint32 restart;
     };
 
     struct FrameUBO {
@@ -19,8 +14,7 @@ namespace {
 
     struct Particle {
         alignas(16) glm::vec4 pos;
-        alignas(16) glm::vec3 vel;
-        alignas(4)  glm::float32 color;
+        alignas(16) glm::vec4 vel;
     };
 
     constexpr vk::VertexInputBindingDescription vertexBindingDescription = {
@@ -35,27 +29,39 @@ namespace {
 
         vk::VertexInputAttributeDescription(
                 1, 0, // location and binding
-                vk::Format::eR32G32B32Sfloat, offsetof(Particle, vel)),
-
-        vk::VertexInputAttributeDescription(
-                2, 0, // location and binding
-                vk::Format::eR32Sfloat, offsetof(Particle, color)),
+                vk::Format::eR32G32B32A32Sfloat, offsetof(Particle, vel)),
     };
 
-    float randcoor() {
-        return (rand() / (float)RAND_MAX) * 2.0f - 1.0f;
-    }
-
     std::vector<Particle> generateShaderData(uint32_t count) {
-        srand((unsigned) time(NULL));
+        std::default_random_engine randomEngine((unsigned)time(nullptr));
+        std::normal_distribution<float> randomDist(0.0f, 1.0f);
+
         std::vector<Particle> particles(count);
-        for (uint32_t i = 0; i < count; ++i) {
-            particles[i].pos = glm::vec4(
-                    0, 0, 0,
-                    rand()/(float)RAND_MAX * 4.0f + 4.0f
-                    );
-            particles[i].vel = glm::normalize(glm::vec3(randcoor(), randcoor(), randcoor()));
-            particles[i].color = rand()/(float)RAND_MAX * 0.25;
+
+        uint32_t i = 0;
+        for (uint32_t ai = 0; ai < std::size(NbodyScreen::attractors); ++ai) {
+            auto& attractor = NbodyScreen::attractors[ai];
+            float color = ai / (float) std::size(NbodyScreen::attractors);
+            // First particle
+            particles[i].pos = glm::vec4(attractor*1.5f, 9000);
+            particles[i].vel = glm::vec4(0.0f);
+            for (uint32_t j = 1; j < NbodyScreen::particlesPerAttractor; ++j) {
+                glm::vec3 relativePos(
+                        randomDist(randomEngine),
+                        randomDist(randomEngine),
+                        randomDist(randomEngine)
+                        );
+                particles[i].pos = glm::vec4(
+                        attractor + relativePos,
+                        // mass
+                        (randomDist(randomEngine) * 0.5f + 0.5f) * 75.0f
+                        );
+                glm::vec3 angular = glm::vec3(0.5f, 1.5f, 0.5f) * (((ai % 2) == 0) ? 1.0f : -1.0f);
+                glm::vec3 velocity = glm::cross(relativePos, angular) + glm::vec3(randomDist(randomEngine), randomDist(randomEngine), randomDist(randomEngine) * 0.025f);
+                particles[i].vel = glm::vec4(velocity, color);
+
+                ++i;
+            }
         }
         return particles;
     }
@@ -63,7 +69,7 @@ namespace {
 
 
 
-EmitterScreen::EmitterScreen(VulkanBaseApp* app):
+NbodyScreen::NbodyScreen(VulkanBaseApp* app):
     CameraScreen(app),
     compute(app),
     graphicsUniform(app, sizeof(FrameUBO))
@@ -81,7 +87,7 @@ EmitterScreen::EmitterScreen(VulkanBaseApp* app):
 ////////////////////////////////////////////////////////////////////////
 
 
-void EmitterScreen::prepareGraphicsPipeline() {
+void NbodyScreen::prepareGraphicsPipeline() {
     // Create Descriptor Pool
     // ---------------------------------------------------------------
 
@@ -156,7 +162,7 @@ void EmitterScreen::prepareGraphicsPipeline() {
 
     GraphicsPipelineBuilder pipelineBuilder;
 
-    auto vertShaderModule = app->createShaderModule(readBinaryFile("shaders/emitter.vert.spv"));
+    auto vertShaderModule = app->createShaderModule(readBinaryFile("shaders/nbody.vert.spv"));
     auto fragShaderModule = app->createShaderModule(readBinaryFile("shaders/emitter.frag.spv"));
 
     pipelineBuilder.stages = { 
@@ -211,14 +217,48 @@ void EmitterScreen::prepareGraphicsPipeline() {
 
 
 
-void EmitterScreen::prepareComputePipeline() {
+void NbodyScreen::prepareComputePipeline() {
     auto shaderData = generateShaderData(maxParticleCount);
 
     computeSSBO = compute.createShaderStorage(shaderData.data(), sizeof(Particle) * shaderData.size());
     computeUBO = compute.createUniformBuffer(sizeof(ComputeUBO));
     compute.finalizeLayout();
 
-    compute.addPipeline(readBinaryFile("shaders/emitter.comp.spv"), "main");
+    {
+        struct SpecializationData {
+            uint32_t sharedDataSize;
+            float gravity;
+            float power;
+            float soften;
+        } specializationData;
+
+        vk::SpecializationMapEntry specializationMapEntries [] = {
+            vk::SpecializationMapEntry(0, offsetof(SpecializationData, sharedDataSize), sizeof(uint32_t)),
+            vk::SpecializationMapEntry(1, offsetof(SpecializationData, gravity), sizeof(float)),
+            vk::SpecializationMapEntry(2, offsetof(SpecializationData, power), sizeof(float)),
+            vk::SpecializationMapEntry(3, offsetof(SpecializationData, soften), sizeof(float)),
+        };
+
+        specializationData.sharedDataSize = std::min(
+                (uint32_t)1024,
+                (uint32_t)(app->physicalDevice.getProperties().limits.maxComputeSharedMemorySize / sizeof(glm::vec4)));
+
+        specializationData.gravity = 0.002f;
+        specializationData.power = 0.75f;
+        specializationData.soften = 0.05f;
+
+        vk::SpecializationInfo specializationInfo(
+                std::size(specializationMapEntries),
+                specializationMapEntries,
+                sizeof(SpecializationData),
+                &specializationData
+                );
+
+        compute.addPipeline(readBinaryFile("shaders/nbodyp1.comp.spv"), "main", &specializationInfo);
+    }
+
+    compute.addPipeline(readBinaryFile("shaders/nbodyp2.comp.spv"), "main");
+
     compute.recordCommands(maxParticleCount / workgroupSize, 1, 1);
 
     // kickstart
@@ -228,7 +268,7 @@ void EmitterScreen::prepareComputePipeline() {
 
 
 
-void EmitterScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo, vk::CommandBuffer commandBuffer, uint32_t index) {
+void NbodyScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo, vk::CommandBuffer commandBuffer, uint32_t index) {
     uint32_t graphicsQindex = app->queueFamilyIndices.graphics;
     uint32_t computeQindex = app->queueFamilyIndices.compute;
 
@@ -275,23 +315,17 @@ void EmitterScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo,
 }
 
 
-void EmitterScreen::update(float delta) {
+void NbodyScreen::update(float delta) {
     CameraScreen::update(delta);
 }
 
 
-void EmitterScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32_t currentFrame) {
+void NbodyScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32_t currentFrame) {
     updateUniformBuffer(currentFrame);
     {
         ComputeUBO* computeUbo = (ComputeUBO*)computeUBO->mappings[currentFrame];
         computeUbo->particleCount = particleCount;
-        computeUbo->delta = app->delta;
-        computeUbo->range2 = particleRange * particleRange;
-        computeUbo->time = app->time;
-        computeUbo->baseSpeed = baseSpeed;
-        computeUbo->speedVariation = speedVariation;
-        computeUbo->restart = restartParticles;
-        restartParticles = false;
+        computeUbo->delta = app->delta * timeMultiplier;
 
         FrameUBO* ubo = (FrameUBO*)graphicsUniform.mappings[currentFrame];
         ubo->colorShift = colorShift;
@@ -346,7 +380,7 @@ void EmitterScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint
 
 
 #ifdef USE_IMGUI
-void EmitterScreen::imgui() {
+void NbodyScreen::imgui() {
     static bool showParticleSettings = true;
     CameraScreen::imgui();
     if (ImGui::BeginMainMenuBar()) {
@@ -364,20 +398,19 @@ void EmitterScreen::imgui() {
 
         ImGui::Separator();
 
-        ImGui::DragFloat("Base Speed", &baseSpeed, 0.005f, 0.0f, 10.0f, "%.3f");
-        ImGui::DragFloat("Speed Variation", &speedVariation, 0.005f, 0.0f, 10.0f, "%.3f");
-        ImGui::DragFloat("Range", &particleRange, 0.25f, 1.0f, 100.0f, "%.3f");
+        ImGui::DragFloat("Time Multiplier", &timeMultiplier, 0.005f, 0.0f, 10.0f, "%.3f");
 
         ImGui::Separator();
 
         ImGui::DragInt("Particle Count", (int*) &particleCount, 100, 1, maxParticleCount);
-        if (ImGui::Button("Restart")) restartParticles = true;
+        if (ImGui::Button("Restart")) {
+        }
         ImGui::End();
     }
 }
 #endif
 
-EmitterScreen::~EmitterScreen() {
+NbodyScreen::~NbodyScreen() {
     // Graphics pipeline cleanup
     app->device->destroyPipeline(graphics.pipeline);
     app->device->destroyPipelineLayout(graphics.pipelineLayout);

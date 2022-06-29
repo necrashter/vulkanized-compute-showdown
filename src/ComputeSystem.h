@@ -68,6 +68,7 @@ public:
 
     // Add a pipeline (compute shader pass) constructed from given shader code and entry point.
     void addPipeline(const std::vector<char>& shaderCode, const char* entryPoint);
+    void addPipeline(const std::vector<char>& shaderCode, const char* entryPoint, vk::SpecializationInfo*);
 
     // Record dispatch command after the pipeline is ready.
     void recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_t groups_z);

@@ -817,7 +817,12 @@ public:
 
         // Called by removeScreen
         // device->waitIdle();
-        removeScreen();
+        try {
+            removeScreen();
+        } catch(vk::DeviceLostError&) {
+            std::cerr << "Device Lost error in VulkanBaseApp cleanup" << std::endl;
+            goto glfwCleanup;
+        }
 
         // NOTE: instance destruction is handled by UniqueInstance, same for device
 
@@ -844,6 +849,7 @@ public:
             DestroyDebugUtilsMessengerEXT(*instance, callback, nullptr);
         }
 
+glfwCleanup:
         glfwDestroyWindow(window);
 
         glfwTerminate();

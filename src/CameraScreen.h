@@ -9,7 +9,7 @@
 struct CameraUBO {
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
-    alignas(16) glm::vec3 cameraPosition;
+    alignas(16) glm::vec4 cameraPosition;
 };
 
 
@@ -38,7 +38,10 @@ public:
             // glm::lookAt(cameraPosition, glm::vec3(0.0f, 0.0f, 0.0f), WORLD_UP),
             noclipCam.get_view_matrix(),
             glm::perspective(glm::radians(fov), app->swapChainExtent.width / (float) app->swapChainExtent.height, 0.02f, 100.0f),
-            noclipCam.position
+            glm::vec4(
+                    noclipCam.position,
+                    app->swapChainExtent.width
+                    )
         };
         // Y coordinate is inverted
         ubo.proj[1][1] *= -1;

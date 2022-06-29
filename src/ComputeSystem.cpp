@@ -174,6 +174,24 @@ void ComputeSystem::addPipeline(const std::vector<char>& shaderCode, const char*
     pipelines.push_back(context->device->createComputePipeline(nullptr, ComputePipelineCreateInfo).value);
 }
 
+void ComputeSystem::addPipeline(const std::vector<char>& shaderCode, const char* entryPoint, vk::SpecializationInfo* specialization) {
+    auto shaderModule = context->createShaderModule(shaderCode);
+
+    vk::ComputePipelineCreateInfo ComputePipelineCreateInfo(
+            vk::PipelineCreateFlags(),    // Flags
+            vk::PipelineShaderStageCreateInfo(       // Shader Create Info struct
+                    vk::PipelineShaderStageCreateFlags(),  // Flags
+                    vk::ShaderStageFlagBits::eCompute,     // Stage
+                    shaderModule.get(),                    // Shader Module
+                    entryPoint, // Shader Entry Point
+                    specialization
+                    ),
+            pipelineLayout                // Pipeline Layout
+            );
+
+    pipelines.push_back(context->device->createComputePipeline(nullptr, ComputePipelineCreateInfo).value);
+}
+
 
 std::vector<vk::BufferMemoryBarrier> ComputeSystem::getMemoryBarriers(vk::BufferMemoryBarrier temp, uint32_t frame) {
     std::vector<vk::BufferMemoryBarrier> barriers(descriptors.size(), temp);
@@ -271,6 +289,8 @@ void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_
                         vk::PipelineStageFlagBits::eComputeShader,
                         {}, // dependency flags
                         0, nullptr, barriers.size(), barriers.data(), 0, nullptr);
+                commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelineIt);
+                commandBuffer.dispatch(groups_x, groups_y, groups_z);
             }
         }
 
