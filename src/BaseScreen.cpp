@@ -26,12 +26,12 @@ void BaseScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32_
 }
 
 #include "ModelViewScreen.h"
-#include "ComputeParticleScreen.h"
+#include "EmitterScreen.h"
 
 const std::vector<std::pair<std::string, std::function<BaseScreen*(VulkanBaseApp*)>>> 
 screenCreators = {
     {"ModelView", [](VulkanBaseApp* app) { return new ModelViewScreen(app); } },
-    {"Particles", [](VulkanBaseApp* app) { return new ComputeParticleScreen(app); } },
+    {"Emitter", [](VulkanBaseApp* app) { return new EmitterScreen(app); } },
 };
 
 std::function<BaseScreen*(VulkanBaseApp*)> findScreen(std::string& query) {

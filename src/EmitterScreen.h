@@ -5,7 +5,7 @@
 #include "ComputeSystem.h"
 
 
-class ComputeParticleScreen : public CameraScreen {
+class EmitterScreen : public CameraScreen {
 private:
     struct {
         vk::DescriptorSetLayout descriptorSetLayout;
@@ -37,7 +37,7 @@ private:
     float restartParticles = false;
 
 public:
-    ComputeParticleScreen(VulkanBaseApp* app);
+    EmitterScreen(VulkanBaseApp* app);
 
     virtual void recordRenderCommands(vk::RenderPassBeginInfo, vk::CommandBuffer, uint32_t) override;
     virtual void submitGraphics(const vk::CommandBuffer*, uint32_t) override;
@@ -47,6 +47,6 @@ public:
     virtual void imgui() override;
 #endif
 
-    virtual ~ComputeParticleScreen();
+    virtual ~EmitterScreen();
 };
 

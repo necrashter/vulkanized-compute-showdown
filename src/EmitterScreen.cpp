@@ -1,4 +1,4 @@
-#include "ComputeParticleScreen.h"
+#include "EmitterScreen.h"
 #include "glsl.h"
 
 struct ComputeUBO {
@@ -63,7 +63,7 @@ namespace {
 
 
 
-ComputeParticleScreen::ComputeParticleScreen(VulkanBaseApp* app):
+EmitterScreen::EmitterScreen(VulkanBaseApp* app):
     CameraScreen(app),
     compute(app),
     graphicsUniform(app, sizeof(FrameUBO))
@@ -81,7 +81,7 @@ ComputeParticleScreen::ComputeParticleScreen(VulkanBaseApp* app):
 ////////////////////////////////////////////////////////////////////////
 
 
-void ComputeParticleScreen::prepareGraphicsPipeline() {
+void EmitterScreen::prepareGraphicsPipeline() {
     // Create Descriptor Pool
     // ---------------------------------------------------------------
 
@@ -156,8 +156,8 @@ void ComputeParticleScreen::prepareGraphicsPipeline() {
 
     GraphicsPipelineBuilder pipelineBuilder;
 
-    auto vertShaderModule = app->createShaderModule(readBinaryFile("shaders/particles.vert.spv"));
-    auto fragShaderModule = app->createShaderModule(readBinaryFile("shaders/particles.frag.spv"));
+    auto vertShaderModule = app->createShaderModule(readBinaryFile("shaders/emitter.vert.spv"));
+    auto fragShaderModule = app->createShaderModule(readBinaryFile("shaders/emitter.frag.spv"));
 
     pipelineBuilder.stages = { 
         {
@@ -211,14 +211,14 @@ void ComputeParticleScreen::prepareGraphicsPipeline() {
 
 
 
-void ComputeParticleScreen::prepareComputePipeline() {
+void EmitterScreen::prepareComputePipeline() {
     auto shaderData = generateShaderData(maxParticleCount);
 
     computeSSBO = compute.createShaderStorage(shaderData.data(), sizeof(Particle) * shaderData.size());
     computeUBO = compute.createUniformBuffer(sizeof(ComputeUBO));
     compute.finalizeLayout();
 
-    compute.addPipeline(readBinaryFile("shaders/particles.comp.spv"), "main");
+    compute.addPipeline(readBinaryFile("shaders/emitter.comp.spv"), "main");
     compute.recordCommands(maxParticleCount / workgroupSize, 1, 1);
 
     // kickstart
@@ -228,7 +228,7 @@ void ComputeParticleScreen::prepareComputePipeline() {
 
 
 
-void ComputeParticleScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo, vk::CommandBuffer commandBuffer, uint32_t index) {
+void EmitterScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo, vk::CommandBuffer commandBuffer, uint32_t index) {
     uint32_t graphicsQindex = app->queueFamilyIndices.graphics;
     uint32_t computeQindex = app->queueFamilyIndices.compute;
 
@@ -275,12 +275,12 @@ void ComputeParticleScreen::recordRenderCommands(vk::RenderPassBeginInfo renderP
 }
 
 
-void ComputeParticleScreen::update(float delta) {
+void EmitterScreen::update(float delta) {
     CameraScreen::update(delta);
 }
 
 
-void ComputeParticleScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32_t currentFrame) {
+void EmitterScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32_t currentFrame) {
     updateUniformBuffer(currentFrame);
     {
         ComputeUBO* computeUbo = (ComputeUBO*)computeUBO->mappings[currentFrame];
@@ -346,7 +346,7 @@ void ComputeParticleScreen::submitGraphics(const vk::CommandBuffer* bufferToSubm
 
 
 #ifdef USE_IMGUI
-void ComputeParticleScreen::imgui() {
+void EmitterScreen::imgui() {
     static bool showParticleSettings = true;
     CameraScreen::imgui();
     if (ImGui::BeginMainMenuBar()) {
@@ -377,7 +377,7 @@ void ComputeParticleScreen::imgui() {
 }
 #endif
 
-ComputeParticleScreen::~ComputeParticleScreen() {
+EmitterScreen::~EmitterScreen() {
     // Graphics pipeline cleanup
     app->device->destroyPipeline(graphics.pipeline);
     app->device->destroyPipelineLayout(graphics.pipelineLayout);
