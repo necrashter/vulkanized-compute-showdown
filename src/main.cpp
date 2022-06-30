@@ -24,11 +24,10 @@ int main(int argc, char** argv) {
         TLOG("ArgParser") << "Explicitly " << (*arg ? "enabling" : "disabling") << " validation layer" << std::endl;
     }
 
-    if (auto arg = argparser.getArgBool("single-queue")) {
-        preferSingleQueueFamily = *arg;
-        TLOG("ArgParser") << "Prefer single queue family: " << (*arg
-                ? "On (Don't prefer dedicated queue families)"
-                : "Off (Prefer dedicated queue families)")  << std::endl;
+    if (auto arg = argparser.getArgBool("dedicated-compute")) {
+        useDedicatedComputeQueue = *arg;
+        TLOG("ArgParser") << "Use dedicated compute queue familiy: "
+            << (*arg ? "On" : "Off")  << std::endl;
     }
 
     if (argparser.hasArg("list-gpus")) {

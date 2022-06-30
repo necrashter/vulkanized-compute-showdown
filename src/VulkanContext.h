@@ -61,11 +61,16 @@ public:
 
     vk::Queue graphicsQueue;
     vk::Queue computeQueue;
+    vk::Queue dedicatedComputeQueue;
+    vk::Queue transferQueue;
 
+    // Graphics command pool
     vk::CommandPool commandPool;
+    vk::CommandPool transferCommandPool;
 
     struct {
-        uint32_t graphics, present, compute;
+        uint32_t graphics, present, transfer;
+        uint32_t compute, dedicatedCompute;
     } queueFamilyIndices;
 
 #ifdef USE_LIBKTX
@@ -148,23 +153,18 @@ public:
        These can be moved to a special command buffer for better performance at initialization.
     */
 
-    inline vk::CommandBuffer beginOneShotCommands() {
-        vk::CommandBufferAllocateInfo allocInfo = {};
-        allocInfo.level = vk::CommandBufferLevel::ePrimary;
-        allocInfo.commandPool = commandPool;
-        allocInfo.commandBufferCount = 1;
+    inline vk::CommandBuffer beginOneShotGraphics() {
+        vk::CommandBufferAllocateInfo allocInfo(commandPool, vk::CommandBufferLevel::ePrimary, 1);
 
         vk::CommandBuffer commandBuffer = device->allocateCommandBuffers(allocInfo)[0];
 
-        vk::CommandBufferBeginInfo beginInfo = {};
-        beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-
+        vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
         commandBuffer.begin(beginInfo);
 
         return commandBuffer;
     }
 
-    inline void endOneShotCommands(vk::CommandBuffer commandBuffer) {
+    inline void endOneShotGraphics(vk::CommandBuffer commandBuffer) {
         commandBuffer.end();
 
         vk::SubmitInfo submitInfo = {};
@@ -175,6 +175,30 @@ public:
         graphicsQueue.waitIdle();
 
         device->freeCommandBuffers(commandPool, commandBuffer);
+    }
+
+    inline vk::CommandBuffer beginOneShotTransfer() {
+        vk::CommandBufferAllocateInfo allocInfo(transferCommandPool, vk::CommandBufferLevel::ePrimary, 1);
+
+        vk::CommandBuffer commandBuffer = device->allocateCommandBuffers(allocInfo)[0];
+
+        vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+        commandBuffer.begin(beginInfo);
+
+        return commandBuffer;
+    }
+
+    inline void endOneShotTransfer(vk::CommandBuffer commandBuffer) {
+        commandBuffer.end();
+
+        vk::SubmitInfo submitInfo = {};
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        transferQueue.submit(submitInfo, nullptr);
+        transferQueue.waitIdle();
+
+        device->freeCommandBuffers(transferCommandPool, commandBuffer);
     }
 
 	/*

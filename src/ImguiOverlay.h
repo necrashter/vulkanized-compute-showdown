@@ -53,9 +53,9 @@ public:
 
         ImGui_ImplVulkan_Init(&init_info, renderPass);
 
-        auto cmd = context->beginOneShotCommands();
+        auto cmd = context->beginOneShotGraphics();
         ImGui_ImplVulkan_CreateFontsTexture(cmd);
-        context->endOneShotCommands(cmd);
+        context->endOneShotGraphics(cmd);
 
         ImGui_ImplVulkan_DestroyFontUploadObjects();
     }

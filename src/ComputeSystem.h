@@ -45,6 +45,9 @@ private:
 public:
     vk::Semaphore sem;
 
+    vk::Queue queue;
+    uint32_t queueIndex;
+
 
     // Barriers to acquire the shader storage buffer for graphics pipeline
     std::vector<vk::BufferMemoryBarrier> graphicsAcquireBarriers[MAX_FRAMES_IN_FLIGHT];

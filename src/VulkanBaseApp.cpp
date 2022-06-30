@@ -3,7 +3,7 @@
 #include "log.h"
 
 bool listGPUs = false;
-bool preferSingleQueueFamily = false;
+bool useDedicatedComputeQueue = false;
 std::optional<int> selectedGPU = std::nullopt;
 
 /* 
@@ -112,11 +112,26 @@ deviceFound:
 }
 
 void VulkanBaseApp::createLogicalDevice() {
+    auto indices = findQueueFamilies(physicalDevice);
+    queueFamilyIndices.graphics = indices.graphicsFamily.value();
+    queueFamilyIndices.present = indices.presentFamily.value();
+    queueFamilyIndices.compute = indices.computeFamily.value();
+    queueFamilyIndices.dedicatedCompute = indices.dedicatedComputeFamily.value_or(queueFamilyIndices.compute);
+    queueFamilyIndices.transfer = indices.dedicatedTransferFamily.value_or(queueFamilyIndices.graphics);
+    TLOG("INIT") << "Selected queue families:"
+        << " graphics=" << queueFamilyIndices.graphics
+        << " present=" << queueFamilyIndices.present
+        << " compute=" << queueFamilyIndices.compute << ',' << queueFamilyIndices.dedicatedCompute
+        << " transfer=" << queueFamilyIndices.transfer
+        << std::endl;
+
     std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos;
     std::set<uint32_t> uniqueQueueFamilies = {
         queueFamilyIndices.graphics,
         queueFamilyIndices.present,
+        queueFamilyIndices.transfer,
         queueFamilyIndices.compute,
+        queueFamilyIndices.dedicatedCompute,
     };
 
     float queuePriority = 1.0f;
@@ -155,6 +170,8 @@ void VulkanBaseApp::createLogicalDevice() {
     graphicsQueue = device->getQueue(queueFamilyIndices.graphics, 0);
     presentQueue = device->getQueue(queueFamilyIndices.present, 0);
     computeQueue = device->getQueue(queueFamilyIndices.compute, 0);
+    dedicatedComputeQueue = device->getQueue(queueFamilyIndices.dedicatedCompute, 0);
+    transferQueue = device->getQueue(queueFamilyIndices.transfer, 0);
 }
 
 

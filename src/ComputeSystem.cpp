@@ -207,9 +207,14 @@ std::vector<vk::BufferMemoryBarrier> ComputeSystem::getMemoryBarriers(vk::Buffer
 
 
 void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_t groups_z) {
+    uint32_t graphicsQindex = context->queueFamilyIndices.graphics;
+    uint32_t computeQindex = useDedicatedComputeQueue ? context->queueFamilyIndices.dedicatedCompute : context->queueFamilyIndices.compute;
+    queueIndex = computeQindex;
+    queue = useDedicatedComputeQueue ? context->dedicatedComputeQueue : context->computeQueue;
+
     // Create Command Pool & Buffer
     {
-        vk::CommandPoolCreateInfo poolInfo({}, context->queueFamilyIndices.compute);
+        vk::CommandPoolCreateInfo poolInfo({}, computeQindex);
         commandPool = context->device->createCommandPool(poolInfo);
 
         commandBuffers = context->device->allocateCommandBuffers(
@@ -219,9 +224,6 @@ void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_
                     MAX_FRAMES_IN_FLIGHT
                     ));
     }
-
-    uint32_t graphicsQindex = context->queueFamilyIndices.graphics;
-    uint32_t computeQindex = context->queueFamilyIndices.compute;
 
     for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
         vk::CommandBuffer commandBuffer = commandBuffers[frame];
@@ -383,8 +385,8 @@ void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &oneShot;
 
-        context->computeQueue.submit(submitInfo, nullptr);
-        context->computeQueue.waitIdle();
+        queue.submit(submitInfo, nullptr);
+        queue.waitIdle();
 
         context->device->freeCommandBuffers(commandPool, oneShot);
     }
@@ -397,7 +399,7 @@ void ComputeSystem::signalSemaphore() {
             0, nullptr, nullptr, // wait nothing
             0, nullptr, // do nothing
             1, &sem); // just signal
-    context->computeQueue.submit(signalSubmit);
+    queue.submit(signalSubmit);
 }
 
 

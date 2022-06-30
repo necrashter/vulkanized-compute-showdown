@@ -96,7 +96,7 @@ uint32_t VulkanContext::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFl
 
 
 void VulkanContext::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
-    vk::CommandBuffer commandBuffer = beginOneShotCommands();
+    vk::CommandBuffer commandBuffer = beginOneShotTransfer();
 
     vk::BufferCopy copyRegion = {};
     copyRegion.srcOffset = 0; // Optional
@@ -104,7 +104,7 @@ void VulkanContext::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceS
     copyRegion.size = size;
     commandBuffer.copyBuffer(srcBuffer, dstBuffer, copyRegion);
 
-    endOneShotCommands(commandBuffer);
+    endOneShotTransfer(commandBuffer);
 }
 
 
@@ -150,7 +150,7 @@ void VulkanContext::transitionImageLayout(
         uint32_t mipLevels,
         vk::ImageLayout oldLayout, vk::ImageLayout newLayout
         ) {
-    vk::CommandBuffer commandBuffer = beginOneShotCommands();
+    vk::CommandBuffer commandBuffer = beginOneShotGraphics();
 
     vk::ImageMemoryBarrier barrier(
             {}, {},
@@ -204,14 +204,14 @@ void VulkanContext::transitionImageLayout(
             1, &barrier
             );
 
-    endOneShotCommands(commandBuffer);
+    endOneShotGraphics(commandBuffer);
 }
 
 void VulkanContext::copyBufferToImage(
         vk::Buffer buffer, vk::Image image,
         uint32_t width, uint32_t height
         ) {
-    vk::CommandBuffer commandBuffer = beginOneShotCommands();
+    vk::CommandBuffer commandBuffer = beginOneShotTransfer();
 
     vk::BufferImageCopy region(
             0, 0, 0,
@@ -226,7 +226,7 @@ void VulkanContext::copyBufferToImage(
             vk::ImageLayout::eTransferDstOptimal,
             1, &region);
 
-    endOneShotCommands(commandBuffer);
+    endOneShotTransfer(commandBuffer);
 }
 
 
@@ -238,7 +238,7 @@ void VulkanContext::generateMipmaps(vk::Image image, vk::Format format, int32_t 
         // software resize e.g. stb_image_resize
         // Load mipmap levels from file (for better loading time)
     }
-    vk::CommandBuffer commandBuffer = beginOneShotCommands();
+    vk::CommandBuffer commandBuffer = beginOneShotGraphics();
 
     // This barrier is used to change the type of mip source
     vk::ImageMemoryBarrier mipSourceBarrier(
@@ -309,5 +309,5 @@ void VulkanContext::generateMipmaps(vk::Image image, vk::Format format, int32_t 
             0, nullptr,
             1, &finalBarrier);
 
-    endOneShotCommands(commandBuffer);
+    endOneShotGraphics(commandBuffer);
 }

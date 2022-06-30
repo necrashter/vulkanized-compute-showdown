@@ -46,6 +46,8 @@ struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;
     std::optional<uint32_t> computeFamily;
+    std::optional<uint32_t> dedicatedComputeFamily;
+    std::optional<uint32_t> dedicatedTransferFamily;
 
     bool isComplete() {
         return graphicsFamily.has_value() && presentFamily.has_value() && computeFamily.has_value();
@@ -60,7 +62,7 @@ struct SwapChainSupportDetails {
 
 
 extern bool listGPUs;
-extern bool preferSingleQueueFamily;
+extern bool useDedicatedComputeQueue;
 extern std::optional<int> selectedGPU;
 
 
@@ -154,13 +156,6 @@ protected:
         setupDebugCallback();
         createSurface();
         pickPhysicalDevice();
-        auto indices = findQueueFamilies(physicalDevice);
-        queueFamilyIndices.graphics = indices.graphicsFamily.value();
-        queueFamilyIndices.present = indices.presentFamily.value();
-        queueFamilyIndices.compute = indices.computeFamily.value();
-        TLOG("INIT") << "Selected queue families: graphics=" << queueFamilyIndices.graphics
-            << " present=" << queueFamilyIndices.present << " compute=" <<
-            queueFamilyIndices.compute << std::endl;
         createLogicalDevice();
 
         createCommandPool();
@@ -170,8 +165,8 @@ protected:
                 &ktxInfo,
                 physicalDevice,
                 device.get(),
-                graphicsQueue, // TODO; dedicated q
-                commandPool,
+                transferQueue,
+                transferCommandPool,
                 nullptr);
 #endif
 
@@ -459,13 +454,26 @@ protected:
     }
 
     void createCommandPool() {
-        vk::CommandPoolCreateInfo poolInfo(
-                vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-                queueFamilyIndices.graphics
-                );
-
         try {
-            commandPool = device->createCommandPool(poolInfo);
+            {
+                vk::CommandPoolCreateInfo poolInfo(
+                        vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+                        queueFamilyIndices.graphics
+                        );
+
+                commandPool = device->createCommandPool(poolInfo);
+            }
+
+            if (queueFamilyIndices.graphics != queueFamilyIndices.transfer) {
+                vk::CommandPoolCreateInfo poolInfo(
+                        vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+                        queueFamilyIndices.transfer
+                        );
+
+                transferCommandPool = device->createCommandPool(poolInfo);
+            } else {
+                transferCommandPool = commandPool;
+            }
         }
         catch (vk::SystemError const &err) {
             throw std::runtime_error("Failed to create command pool!");
@@ -719,13 +727,19 @@ protected:
             bool graphics = (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) == vk::QueueFlagBits::eGraphics;
             bool compute = (queueFamily.queueFlags & vk::QueueFlagBits::eCompute) == vk::QueueFlagBits::eCompute;
             bool present = device.getSurfaceSupportKHR(i, surface);
+            bool transfer = (queueFamily.queueFlags & vk::QueueFlagBits::eTransfer) == vk::QueueFlagBits::eTransfer;
 
             if (graphics) {
                 if (!indices.graphicsFamily.has_value()) indices.graphicsFamily = i;
             }
             if (compute) {
-                if (!indices.computeFamily.has_value() || (!preferSingleQueueFamily && !graphics))
-                    indices.computeFamily = i;
+                if (!indices.computeFamily.has_value()) indices.computeFamily = i;
+            }
+            if (compute && !graphics) {
+                if (!indices.dedicatedComputeFamily.has_value()) indices.dedicatedComputeFamily = i;
+            }
+            if (transfer && !graphics) {
+                if (!indices.dedicatedTransferFamily.has_value()) indices.dedicatedTransferFamily = i;
             }
             if (present) {
                 if (!indices.presentFamily.has_value()) indices.presentFamily = i;
@@ -856,6 +870,9 @@ public:
         ktxVulkanDeviceInfo_Destruct(&ktxInfo);
 #endif
 
+        if (commandPool != transferCommandPool) {
+            device->destroyCommandPool(transferCommandPool);
+        }
         device->destroyCommandPool(commandPool);
 
 #ifdef USE_IMGUI

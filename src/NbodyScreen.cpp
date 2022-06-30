@@ -308,7 +308,7 @@ void NbodyScreen::prepareComputePipeline() {
 
 void NbodyScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo, vk::CommandBuffer commandBuffer, uint32_t index) {
     uint32_t graphicsQindex = app->queueFamilyIndices.graphics;
-    uint32_t computeQindex = app->queueFamilyIndices.compute;
+    uint32_t computeQindex = compute.queueIndex;
 
     // Compute shader barrier
     if (graphicsQindex != computeQindex) {
@@ -405,7 +405,7 @@ void NbodyScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32
             compute.sem,
         };
 
-        app->computeQueue.submit(vk::SubmitInfo(
+        compute.queue.submit(vk::SubmitInfo(
                 std::size(waitSemaphores), waitSemaphores, waitStages,
                 1, compute.getCommandBufferPointer(currentFrame),
                 std::size(signalSemaphores), signalSemaphores),
