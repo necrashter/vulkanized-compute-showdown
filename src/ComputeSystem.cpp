@@ -225,8 +225,7 @@ void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_
 
     for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame) {
         vk::CommandBuffer commandBuffer = commandBuffers[frame];
-        // for some reason we need simultaneous use
-        vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
+        vk::CommandBufferBeginInfo beginInfo;
         if (commandBuffer.begin(&beginInfo) != vk::Result::eSuccess) {
             throw std::runtime_error("Failed to begin recording to compute command buffer");
         }
@@ -277,6 +276,7 @@ void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_
             auto pipelineIt = pipelines.begin();
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelineIt);
             commandBuffer.dispatch(groups_x, groups_y, groups_z);
+            ++pipelineIt;
             // Need barriers between passes
             for (; pipelineIt != pipelines.end(); ++pipelineIt) {
                 commandBuffer.pipelineBarrier(
