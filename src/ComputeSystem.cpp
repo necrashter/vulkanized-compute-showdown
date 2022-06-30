@@ -194,16 +194,11 @@ void ComputeSystem::addPipeline(const std::vector<char>& shaderCode, const char*
 
 
 std::vector<vk::BufferMemoryBarrier> ComputeSystem::getMemoryBarriers(vk::BufferMemoryBarrier temp, uint32_t frame) {
-    std::vector<vk::BufferMemoryBarrier> barriers(descriptors.size(), temp);
+    std::vector<vk::BufferMemoryBarrier> barriers(storageBuffers.size(), temp);
     for (uint32_t i = 0; i < descriptors.size(); ++i) {
         if (descriptors[i]->type == Descriptor::eSSBO) {
             auto obj = ((ComputeStorage*)descriptors[i]);
             barriers[i].buffer = obj->buffer;
-            barriers[i].size = obj->size;
-        }
-        else if (descriptors[i]->type == Descriptor::eFrameUniform) {
-            auto obj = ((FrameUniform*)descriptors[i]);
-            barriers[i].buffer = obj->buffers[frame];
             barriers[i].size = obj->size;
         }
     }
@@ -272,7 +267,7 @@ void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_
                         // source mask, destination mask
                         vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead,
                         // source and destination queues
-                        computeQindex, computeQindex,
+                        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
                         // buffer range
                         VK_NULL_HANDLE, 0, 0
                         ),
@@ -353,7 +348,7 @@ void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_
 
         oneShot.begin(beginInfo);
 
-        uint32_t totalReleases = storageBuffers.size() + uniformBuffers.size() * MAX_FRAMES_IN_FLIGHT;
+        uint32_t totalReleases = storageBuffers.size();
         std::vector<vk::BufferMemoryBarrier> releaseBarrier(
                 totalReleases,
                 vk::BufferMemoryBarrier(
@@ -372,14 +367,6 @@ void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_
                 auto obj = ((ComputeStorage*)descriptor);
                 releaseBarrier[i].buffer = obj->buffer;
                 releaseBarrier[i].size = obj->size;
-            }
-            else if (descriptors[i]->type == Descriptor::eFrameUniform) {
-                auto obj = ((FrameUniform*)descriptor);
-                for (uint32_t j = 0; j < MAX_FRAMES_IN_FLIGHT; ++j) {
-                    releaseBarrier[i].buffer = obj->buffers[j];
-                    releaseBarrier[i].size = obj->size;
-                    ++i;
-                }
             }
             ++i;
         }

@@ -13,6 +13,8 @@ set(CMAKE_CXX_FLAGS "-Wall -g")
 
 # COMPILE OPTIONS
 option(USE_IMGUI "Enable Dear Imgui for a nice graphical user interface" ON)
+
+option(USE_LIBKTX "Enable libktx to read GPU-oriented texture format KTX" ON)
 option(USE_SHADERC "Enable shaderc for compiling GLSL shaders at run-time" OFF)
 
 
@@ -45,6 +47,18 @@ message(STATUS "GLM includes ${GLM_INCLUDE_DIRS}")
 
 # Vulkan itself
 find_package(Vulkan REQUIRED FATAL_ERROR)
+
+# shaderc
+if(USE_LIBKTX)
+    find_library(LIBKTX ktx)
+    if (LIBKTX)
+        message(STATUS "Found libktx: ${LIBKTX}")
+        list(APPEND EXTRA_LIBS ${LIBKTX})
+        add_compile_definitions(USE_LIBKTX)
+    else()
+        message(FATAL_ERROR "libktx was requested but NOT found!")
+    endif()
+endif()
 
 # shaderc
 if(USE_SHADERC)
@@ -91,7 +105,7 @@ foreach(source IN LISTS SHADERS)
   get_filename_component(FILENAME ${source} NAME)
   add_custom_command(
     COMMAND
-      ${glslc_executable}
+      ${glslc_executable} -O
       -o ${SHADER_BINARY_DIR}/${FILENAME}.spv
       ${source}
     OUTPUT ${SHADER_BINARY_DIR}/${FILENAME}.spv

@@ -172,7 +172,15 @@ void VulkanBaseApp::drawImgui() {
             for (auto it : screenCreators) {
                 if (ImGui::MenuItem(it.first.c_str())) {
                     removeScreen();
-                    screen = it.second(this);
+                    try {
+                        screen = it.second(this);
+                    } catch (std::exception& e) {
+                        std::stringstream ss;
+                        ss << "Failed to load screen: " << e.what();
+                        errorMessage = ss.str();
+                        imguiErrorPopup = true;
+                        TERR("Application") << errorMessage << std::endl;
+                    }
                 }
             }
             ImGui::EndMenu();
@@ -204,6 +212,14 @@ void VulkanBaseApp::drawImgui() {
             } else {
                 ImGui::Text(" - Validation layers disabled");
             }
+        }
+        ImGui::End();
+    }
+
+    if (imguiErrorPopup) {
+        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoNav;
+        if (ImGui::Begin("ERROR", &imguiErrorPopup, windowFlags)) {
+            ImGui::Text("%s", errorMessage.c_str());
         }
         ImGui::End();
     }

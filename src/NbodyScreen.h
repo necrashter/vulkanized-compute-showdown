@@ -4,6 +4,10 @@
 #include "GraphicsPipelineBuilder.h"
 #include "ComputeSystem.h"
 
+#ifdef USE_LIBKTX
+#include "Texture.h"
+#endif
+
 
 class NbodyScreen : public CameraScreen {
 private:
@@ -22,6 +26,11 @@ private:
 
     FrameUniform graphicsUniform;
 
+#ifdef USE_LIBKTX
+    TextureKTX huesTexture;
+    TextureKTX particleTexture;
+#endif
+
     void prepareGraphicsPipeline();
     void prepareComputePipeline();
 
@@ -32,7 +41,7 @@ private:
 public:
     const uint32_t workgroupSize = 256;
     uint32_t particleCount = maxParticleCount;
-    constexpr static uint32_t particlesPerAttractor = 4096;
+    constexpr static uint32_t particlesPerAttractor = 4 * 1024;
     constexpr static glm::vec3 attractors[] = {
         glm::vec3(5.0f, 0.0f, 0.0f),
         glm::vec3(-5.0f, 0.0f, 0.0f),

@@ -5,6 +5,10 @@
 
 #include <fstream>
 
+#ifdef USE_LIBKTX
+#include <ktxvulkan.h>
+#endif
+
 
 inline bool hasStencilComponent(vk::Format format) {
     return format == vk::Format::eD32SfloatS8Uint || format == vk::Format::eD24UnormS8Uint;
@@ -63,6 +67,10 @@ public:
     struct {
         uint32_t graphics, present, compute;
     } queueFamilyIndices;
+
+#ifdef USE_LIBKTX
+    ktxVulkanDeviceInfo ktxInfo;
+#endif
 
 ////////////////////////////////////////////////////////////////////////
 //                         UTILITY FUNCTIONS                          //

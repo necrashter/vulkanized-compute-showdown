@@ -29,6 +29,10 @@
 #include "ImguiOverlay.h"
 #endif
 
+#ifdef USE_LIBKTX
+#include <ktxvulkan.h>
+#endif
+
 #include "config.h"
 #include "log.h"
 
@@ -97,6 +101,8 @@ private:
 
     bool imguiShowPerformance = false;
     bool imguiShowAbout = false;
+    bool imguiErrorPopup = false;
+    std::string errorMessage;
 
     void drawImgui();
 #endif
@@ -158,6 +164,16 @@ protected:
         createLogicalDevice();
 
         createCommandPool();
+
+#ifdef USE_LIBKTX
+        ktxVulkanDeviceInfo_Construct(
+                &ktxInfo,
+                physicalDevice,
+                device.get(),
+                graphicsQueue, // TODO; dedicated q
+                commandPool,
+                nullptr);
+#endif
 
         // Determine depth format (required before createRenderPass)
         depthFormat = findSupportedFormat(
@@ -835,6 +851,10 @@ public:
             device->destroySemaphore(imageAvailableSemaphores[i]);
             device->destroyFence(inFlightFences[i]);
         }
+
+#ifdef USE_LIBKTX
+        ktxVulkanDeviceInfo_Destruct(&ktxInfo);
+#endif
 
         device->destroyCommandPool(commandPool);
 

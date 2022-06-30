@@ -74,6 +74,10 @@ NbodyScreen::NbodyScreen(VulkanBaseApp* app):
     compute(app),
     graphicsUniform(app, sizeof(FrameUBO))
 {
+#ifdef USE_LIBKTX
+    huesTexture.load(app, "../assets/hues.ktx");
+    particleTexture.load(app, "../assets/particle.ktx");
+#endif
     prepareGraphicsPipeline();
     prepareComputePipeline();
     noclipCam.position = glm::vec3(-6*1.7320508075688772, 6, 0);
@@ -91,13 +95,16 @@ void NbodyScreen::prepareGraphicsPipeline() {
     // Create Descriptor Pool
     // ---------------------------------------------------------------
 
-    std::array<vk::DescriptorPoolSize, 1> poolSizes = {
+    vk::DescriptorPoolSize poolSizes[] = {
         // UBO
         vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT * 2),
+#ifdef USE_LIBKTX
+        vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT * 2),
+#endif
     };
     vk::DescriptorPoolCreateInfo poolCreateInfo({},
             MAX_FRAMES_IN_FLIGHT,
-            poolSizes.size(), poolSizes.data());
+            std::size(poolSizes), poolSizes);
     try {
         graphics.descriptorPool = app->device->createDescriptorPool(poolCreateInfo);
     } catch (vk::SystemError const &err) {
@@ -110,12 +117,20 @@ void NbodyScreen::prepareGraphicsPipeline() {
     vk::DescriptorSetLayoutBinding bindings[] = {
         vk::DescriptorSetLayoutBinding(
             0, vk::DescriptorType::eUniformBuffer, 1,
-            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            nullptr),
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            ),
         vk::DescriptorSetLayoutBinding(
             1, vk::DescriptorType::eUniformBuffer, 1,
-            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            nullptr),
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            ),
+#ifdef USE_LIBKTX
+        vk::DescriptorSetLayoutBinding(
+            2, vk::DescriptorType::eCombinedImageSampler, 1,
+            vk::ShaderStageFlagBits::eFragment),
+        vk::DescriptorSetLayoutBinding(
+            3, vk::DescriptorType::eCombinedImageSampler, 1,
+            vk::ShaderStageFlagBits::eFragment),
+#endif
     };
 
     try {
@@ -140,6 +155,12 @@ void NbodyScreen::prepareGraphicsPipeline() {
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vk::DescriptorBufferInfo bufferInfo(cameraUniform.buffers[i], 0, sizeof(CameraUBO));
         vk::DescriptorBufferInfo frameUniformInfo(graphicsUniform.buffers[i], 0, sizeof(FrameUBO));
+#ifdef USE_LIBKTX
+        vk::DescriptorImageInfo huesImageInfo(huesTexture.sampler, huesTexture.view,
+                vk::ImageLayout::eShaderReadOnlyOptimal);
+        vk::DescriptorImageInfo particleImageInfo(particleTexture.sampler, particleTexture.view,
+                vk::ImageLayout::eShaderReadOnlyOptimal);
+#endif
 
         vk::WriteDescriptorSet descriptorWrites[] = {
             // UBO
@@ -153,6 +174,20 @@ void NbodyScreen::prepareGraphicsPipeline() {
                     nullptr, // image info
                     &frameUniformInfo
                     ),
+#ifdef USE_LIBKTX
+            vk::WriteDescriptorSet(
+                    graphics.descriptorSets[i], 2, 0, 1,
+                    vk::DescriptorType::eCombinedImageSampler,
+                    &huesImageInfo,
+                    nullptr
+                    ),
+            vk::WriteDescriptorSet(
+                    graphics.descriptorSets[i], 3, 0, 1,
+                    vk::DescriptorType::eCombinedImageSampler,
+                    &particleImageInfo,
+                    nullptr
+                    ),
+#endif
         };
         app->device->updateDescriptorSets(std::size(descriptorWrites), descriptorWrites, 0, nullptr);
     }
@@ -163,7 +198,11 @@ void NbodyScreen::prepareGraphicsPipeline() {
     GraphicsPipelineBuilder pipelineBuilder;
 
     auto vertShaderModule = app->createShaderModule(readBinaryFile("shaders/nbody.vert.spv"));
-    auto fragShaderModule = app->createShaderModule(readBinaryFile("shaders/emitter.frag.spv"));
+#ifdef USE_LIBKTX
+    auto fragShaderModule = app->createShaderModule(readBinaryFile("shaders/nbodyKTX.frag.spv"));
+#else
+    auto fragShaderModule = app->createShaderModule(readBinaryFile("shaders/nbody.frag.spv"));
+#endif
 
     pipelineBuilder.stages = { 
         {
@@ -239,9 +278,8 @@ void NbodyScreen::prepareComputePipeline() {
             vk::SpecializationMapEntry(3, offsetof(SpecializationData, soften), sizeof(float)),
         };
 
-        specializationData.sharedDataSize = std::min(
-                (uint32_t)1024,
-                (uint32_t)(app->physicalDevice.getProperties().limits.maxComputeSharedMemorySize / sizeof(glm::vec4)));
+        uint32_t hardwareMax = (uint32_t)(app->physicalDevice.getProperties().limits.maxComputeSharedMemorySize / sizeof(glm::vec4));
+        specializationData.sharedDataSize = std::min((uint32_t)1024, hardwareMax);
 
         specializationData.gravity = 0.002f;
         specializationData.power = 0.75f;
@@ -392,6 +430,13 @@ void NbodyScreen::imgui() {
     }
     if (showParticleSettings) {
         ImGui::Begin("Particles", &showParticleSettings);
+#ifndef USE_LIBKTX
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255,0,0,255));
+        ImGui::Text("WARNING: The program is compiled without KTX support.");
+        ImGui::Text("Performance will be significantly worse in this scene.");
+        ImGui::Text("Because the textures are used as LUTs.");
+        ImGui::PopStyleColor();
+#endif
 
         ImGui::DragFloat("BG Brightness", &bgBrightness, 0.005f, 0.0f, 1.0f, "%.3f");
         ImGui::DragFloat("Color Shift", &colorShift, 0.005f, 0.0f, 1.0f, "%.3f");
@@ -418,5 +463,11 @@ NbodyScreen::~NbodyScreen() {
     app->device->destroyDescriptorSetLayout(graphics.descriptorSetLayout);
 
     app->device->destroySemaphore(graphics.sem);
+
+#ifdef USE_LIBKTX
+    // textures
+    huesTexture.cleanup(app);
+    particleTexture.cleanup(app);
+#endif
 }
 
