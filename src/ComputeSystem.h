@@ -1,6 +1,6 @@
 #pragma once
 
-#include "VulkanContext.h"
+#include "VulkanBaseApp.h"
 #include <vulkan/vulkan.hpp>
 #include "FrameUniform.h"
 
@@ -19,7 +19,7 @@ class ComputeSystem {
     };
 
 private:
-    VulkanContext* const context;
+    VulkanBaseApp* const app;
 
     vk::DescriptorSetLayout descriptorSetLayout;
     vk::DescriptorPool descriptorPool;
@@ -54,8 +54,8 @@ public:
     // Barriers to release the shader storage buffer for graphics pipeline
     std::vector<vk::BufferMemoryBarrier> graphicsReleaseBarriers[MAX_FRAMES_IN_FLIGHT];
 
-    // Initializes the compute system with given Vulkan context.
-    ComputeSystem(VulkanContext* context);
+    // Initializes the compute system with given Vulkan app.
+    ComputeSystem(VulkanBaseApp* app);
 
     // Create SSBO (Shader Storage Object) initialized with the given data.
     // Return pointer to create vk::Buffer (for binding as vertex buffer)
@@ -76,12 +76,11 @@ public:
     // Record dispatch command after the pipeline is ready.
     void recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_t groups_z);
 
-    // Signal the semaphore for kickstart
+    // Signal the semaphore to kickstart for graphics -> compute submit order
     void signalSemaphore();
 
-    inline vk::CommandBuffer* const getCommandBufferPointer(uint32_t i) {
-        return &commandBuffers[i];
-    }
+    // Submit the given graphics commands and the corresponding compute commands
+    void submitSeqGraphicsCompute(const vk::CommandBuffer* bufferToSubmit, uint32_t currentFrame, vk::Semaphore graphicsSem);
 
     ~ComputeSystem();
 };

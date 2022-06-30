@@ -1,8 +1,8 @@
 #include "ComputeSystem.h"
 
 
-ComputeSystem::ComputeSystem(VulkanContext* context): context(context) {
-    sem = context->device->createSemaphore({});
+ComputeSystem::ComputeSystem(VulkanBaseApp* app): app(app) {
+    sem = app->device->createSemaphore({});
 }
 
 
@@ -20,26 +20,26 @@ vk::Buffer* ComputeSystem::createShaderStorage(const void* input, size_t size) {
 
     vk::Buffer stagingBuffer;
     vk::DeviceMemory stagingBufferMemory;
-    context->createBuffer(
+    app->createBuffer(
             size,
             vk::BufferUsageFlagBits::eTransferSrc,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
             stagingBuffer, stagingBufferMemory);
 
-    void* data = context->device->mapMemory(stagingBufferMemory, 0, size);
+    void* data = app->device->mapMemory(stagingBufferMemory, 0, size);
     memcpy(data, input, size);
-    context->device->unmapMemory(stagingBufferMemory);
+    app->device->unmapMemory(stagingBufferMemory);
 
-    context->createBuffer(
+    app->createBuffer(
             size,
             // NOTE: compute shader storageBuffer is also used as vertex buffer
             vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
             vk::MemoryPropertyFlagBits::eDeviceLocal,
             storage.buffer, storage.memory);
-    context->copyBuffer(stagingBuffer, storage.buffer, size);
+    app->copyBuffer(stagingBuffer, storage.buffer, size);
 
-    context->device->destroyBuffer(stagingBuffer);
-    context->device->freeMemory(stagingBufferMemory);
+    app->device->destroyBuffer(stagingBuffer);
+    app->device->freeMemory(stagingBufferMemory);
 
     storage.size = size;
 
@@ -60,7 +60,7 @@ FrameUniform* ComputeSystem::createUniformBuffer(size_t size) {
     if (size == 0) {
         throw std::runtime_error("Compute Shader Uniform Buffer size is 0");
     }
-    uniformBuffers.emplace_back(context, size);
+    uniformBuffers.emplace_back(app, size);
     auto& storage = uniformBuffers.back();
 
     uint32_t bindingIndex = (uint32_t) bindings.size();
@@ -92,7 +92,7 @@ void ComputeSystem::finalizeLayout() {
             MAX_FRAMES_IN_FLIGHT,
             std::size(poolSizes), poolSizes);
     try {
-        descriptorPool = context->device->createDescriptorPool(poolCreateInfo);
+        descriptorPool = app->device->createDescriptorPool(poolCreateInfo);
     } catch (vk::SystemError const &err) {
         throw std::runtime_error("Failed to create descriptor pool");
     }
@@ -101,7 +101,7 @@ void ComputeSystem::finalizeLayout() {
     // ---------------------------------------------------------------
 
     try {
-        descriptorSetLayout = context->device->createDescriptorSetLayout({{},
+        descriptorSetLayout = app->device->createDescriptorSetLayout({{},
                 (uint32_t)bindings.size(), bindings.data()});
     } catch (vk::SystemError const &err) {
         throw std::runtime_error("Failed to create descriptor set layout");
@@ -112,7 +112,7 @@ void ComputeSystem::finalizeLayout() {
 
     try {
         std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
-        descriptorSets = context->device->allocateDescriptorSets(vk::DescriptorSetAllocateInfo(
+        descriptorSets = app->device->allocateDescriptorSets(vk::DescriptorSetAllocateInfo(
                     descriptorPool,
                     layouts.size(), layouts.data()));
     } catch (vk::SystemError const &err) {
@@ -144,21 +144,21 @@ void ComputeSystem::finalizeLayout() {
                 bufferInfos[i].range = ((ComputeStorage*)descriptors[i])->size;
             }
         }
-        context->device->updateDescriptorSets(
+        app->device->updateDescriptorSets(
                 descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
     }
 
     // Create Pipeline Layout
     // ---------------------------------------------------------------
 
-    pipelineLayout = context->device->createPipelineLayout(
+    pipelineLayout = app->device->createPipelineLayout(
             vk::PipelineLayoutCreateInfo({}, descriptorSetLayout));
 }
 
 
 
 void ComputeSystem::addPipeline(const std::vector<char>& shaderCode, const char* entryPoint) {
-    auto shaderModule = context->createShaderModule(shaderCode);
+    auto shaderModule = app->createShaderModule(shaderCode);
 
     vk::ComputePipelineCreateInfo ComputePipelineCreateInfo(
             vk::PipelineCreateFlags(),    // Flags
@@ -171,11 +171,11 @@ void ComputeSystem::addPipeline(const std::vector<char>& shaderCode, const char*
             pipelineLayout                // Pipeline Layout
             );
 
-    pipelines.push_back(context->device->createComputePipeline(nullptr, ComputePipelineCreateInfo).value);
+    pipelines.push_back(app->device->createComputePipeline(nullptr, ComputePipelineCreateInfo).value);
 }
 
 void ComputeSystem::addPipeline(const std::vector<char>& shaderCode, const char* entryPoint, vk::SpecializationInfo* specialization) {
-    auto shaderModule = context->createShaderModule(shaderCode);
+    auto shaderModule = app->createShaderModule(shaderCode);
 
     vk::ComputePipelineCreateInfo ComputePipelineCreateInfo(
             vk::PipelineCreateFlags(),    // Flags
@@ -189,7 +189,7 @@ void ComputeSystem::addPipeline(const std::vector<char>& shaderCode, const char*
             pipelineLayout                // Pipeline Layout
             );
 
-    pipelines.push_back(context->device->createComputePipeline(nullptr, ComputePipelineCreateInfo).value);
+    pipelines.push_back(app->device->createComputePipeline(nullptr, ComputePipelineCreateInfo).value);
 }
 
 
@@ -207,17 +207,17 @@ std::vector<vk::BufferMemoryBarrier> ComputeSystem::getMemoryBarriers(vk::Buffer
 
 
 void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_t groups_z) {
-    uint32_t graphicsQindex = context->queueFamilyIndices.graphics;
-    uint32_t computeQindex = useDedicatedComputeQueue ? context->queueFamilyIndices.dedicatedCompute : context->queueFamilyIndices.compute;
+    uint32_t graphicsQindex = app->queueFamilyIndices.graphics;
+    uint32_t computeQindex = useDedicatedComputeQueue ? app->queueFamilyIndices.dedicatedCompute : app->queueFamilyIndices.compute;
     queueIndex = computeQindex;
-    queue = useDedicatedComputeQueue ? context->dedicatedComputeQueue : context->computeQueue;
+    queue = useDedicatedComputeQueue ? app->dedicatedComputeQueue : app->computeQueue;
 
     // Create Command Pool & Buffer
     {
         vk::CommandPoolCreateInfo poolInfo({}, computeQindex);
-        commandPool = context->device->createCommandPool(poolInfo);
+        commandPool = app->device->createCommandPool(poolInfo);
 
-        commandBuffers = context->device->allocateCommandBuffers(
+        commandBuffers = app->device->allocateCommandBuffers(
                 vk::CommandBufferAllocateInfo(
                     commandPool,
                     vk::CommandBufferLevel::ePrimary,
@@ -342,7 +342,7 @@ void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_
     // Instead of doing this, you could also skip the first acquire in the graphics pipeline
     // This trades initialization speed for render speed (no need to check if first acquire)
     if (graphicsQindex != computeQindex) {
-        vk::CommandBuffer oneShot = context->device->allocateCommandBuffers(
+        vk::CommandBuffer oneShot = app->device->allocateCommandBuffers(
                 vk::CommandBufferAllocateInfo(commandPool, vk::CommandBufferLevel::ePrimary, 1)
                 )[0];
 
@@ -388,7 +388,7 @@ void ComputeSystem::recordCommands(uint32_t groups_x, uint32_t groups_y, uint32_
         queue.submit(submitInfo, nullptr);
         queue.waitIdle();
 
-        context->device->freeCommandBuffers(commandPool, oneShot);
+        app->device->freeCommandBuffers(commandPool, oneShot);
     }
 }
 
@@ -403,19 +403,73 @@ void ComputeSystem::signalSemaphore() {
 }
 
 
-ComputeSystem::~ComputeSystem() {
-    context->device->destroySemaphore(sem);
+void ComputeSystem::submitSeqGraphicsCompute(const vk::CommandBuffer* bufferToSubmit, uint32_t currentFrame, vk::Semaphore graphicsSem) {
+    try {
+        // Wait for compute shader to complete at vertex input stage (see kickstart)
+        // Wait for output image to become available at color attachment output stage
+        vk::Semaphore waitSemaphores[] = {
+            sem,
+            app->imageAvailableSemaphores[currentFrame]
+        };
+        vk::PipelineStageFlags waitStages[] = {
+            vk::PipelineStageFlagBits::eVertexInput,
+            vk::PipelineStageFlagBits::eColorAttachmentOutput
+        };
+        vk::Semaphore signalSemaphores[] = {
+            graphicsSem,
+            app->renderFinishedSemaphores[currentFrame]
+        };
 
-    // Compute pipeline cleanup
-    for (auto pipeline : pipelines) context->device->destroyPipeline(pipeline);
-    context->device->destroyPipelineLayout(pipelineLayout);
-    context->device->destroyDescriptorPool(descriptorPool);
-    context->device->destroyDescriptorSetLayout(descriptorSetLayout);
+        vk::SubmitInfo submitInfo(
+                std::size(waitSemaphores), waitSemaphores, waitStages,
+                1, bufferToSubmit,
+                std::size(signalSemaphores), signalSemaphores);
 
-    context->device->destroyCommandPool(commandPool);
+        app->graphicsQueue.submit(submitInfo);
+    } catch (vk::SystemError const &err) {
+        throw std::runtime_error("Failed to submit graphics command buffer");
+    }
+    app->presentFrame();
 
-    for (auto storage : storageBuffers) {
-        context->device->destroyBuffer(storage.buffer);
-        context->device->freeMemory(storage.memory);
+    try {
+        // Wait for graphics queue to render
+        vk::Semaphore waitSemaphores[] = {
+            graphicsSem,
+        };
+        vk::PipelineStageFlags waitStages[] = {
+            vk::PipelineStageFlagBits::eComputeShader
+        };
+        vk::Semaphore signalSemaphores[] = {
+            sem,
+        };
+
+        vk::SubmitInfo submitInfo(
+                std::size(waitSemaphores), waitSemaphores, waitStages,
+                1, &commandBuffers[currentFrame],
+                std::size(signalSemaphores), signalSemaphores);
+
+        // signal fence here, we're done with this frame
+        queue.submit(submitInfo, app->inFlightFences[currentFrame]);
+    } catch (vk::SystemError const &err) {
+        throw std::runtime_error("Failed to submit compute command buffer");
     }
 }
+
+
+ComputeSystem::~ComputeSystem() {
+    app->device->destroySemaphore(sem);
+
+    // Compute pipeline cleanup
+    for (auto pipeline : pipelines) app->device->destroyPipeline(pipeline);
+    app->device->destroyPipelineLayout(pipelineLayout);
+    app->device->destroyDescriptorPool(descriptorPool);
+    app->device->destroyDescriptorSetLayout(descriptorSetLayout);
+
+    app->device->destroyCommandPool(commandPool);
+
+    for (auto storage : storageBuffers) {
+        app->device->destroyBuffer(storage.buffer);
+        app->device->freeMemory(storage.memory);
+    }
+}
+

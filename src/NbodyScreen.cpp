@@ -65,25 +65,82 @@ namespace {
         }
         return particles;
     }
+
+    const char* fragmentShaders[] = {
+#ifdef USE_LIBKTX
+        "shaders/nbodyKTX.frag.spv",
+#endif
+        "shaders/nbody.frag.spv",
+    };
+
+#ifdef USE_IMGUI
+    const char* fragmentShaderNames[] = {
+#ifdef USE_LIBKTX
+        "Textures & LUT",
+#endif
+        "Procedural",
+    };
+#endif
+
+    int selectedFragmentShader = 0;
+
+    uint32_t maxComputeSharedMemorySize;
+
+    const char* computeShaders[] = {
+        "shaders/nbodyp1naive.comp.spv",
+        "shaders/nbodyp1shared.comp.spv",
+    };
+
+#ifdef USE_IMGUI
+    const char* computeShaderNames[] = {
+        "Naive Method",
+        "Shared Cache",
+    };
+#endif
+
+    int selectedComputeShader = 1;
+
+    const char* description =
+        "N-body simulation approximates the motion of particles under the influence gravity. "
+        "At each frame, the simulation is advanced using 2 compute shader passes.\n\n"
+        "In the first pass, gravitational force between all bodies are computed to find the force "
+        "inflicted on each particle, and the forces are applied to update the velocity. "
+        "This pass has a computational complexity of O(n^2).\n\n"
+        "In the second pass, the positions are updated using Euler integration, i.e., "
+        "pos += vel * delta. This should be done in a separate pass for synchronization.\n\n"
+        "A shared memory in compute shader can be used to accelerate the computation."
+        "";
 }
 
 
 
 NbodyScreen::NbodyScreen(VulkanBaseApp* app):
-    CameraScreen(app),
-    compute(app),
-    graphicsUniform(app, sizeof(FrameUBO))
+    CameraScreen(app), compute(nullptr), graphicsUniform(nullptr)
 {
 #ifdef USE_LIBKTX
     huesTexture.load(app, "../assets/hues.ktx");
     particleTexture.load(app, "../assets/particle.ktx");
 #endif
-    prepareGraphicsPipeline();
-    prepareComputePipeline();
+    maxComputeSharedMemorySize = (uint32_t)(app->physicalDevice.getProperties().limits.maxComputeSharedMemorySize / sizeof(glm::vec4));
+
     noclipCam.position = glm::vec3(-6*1.7320508075688772, 6, 0);
     noclipCam.pitch = -30;
     noclipCam.yaw = 0.0;
     noclipCam.update_vectors();
+
+    buildPipeline();
+
+#ifndef USE_IMGUI
+    std::cout << "\nDESCRIPTION\n" << description << '\n' << std::endl;
+#endif
+}
+
+
+void NbodyScreen::buildPipeline() {
+    compute = new ComputeSystem(app);
+    graphicsUniform = new FrameUniform(app, sizeof(FrameUBO));
+    prepareGraphicsPipeline();
+    prepareComputePipeline();
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -154,7 +211,7 @@ void NbodyScreen::prepareGraphicsPipeline() {
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vk::DescriptorBufferInfo bufferInfo(cameraUniform.buffers[i], 0, sizeof(CameraUBO));
-        vk::DescriptorBufferInfo frameUniformInfo(graphicsUniform.buffers[i], 0, sizeof(FrameUBO));
+        vk::DescriptorBufferInfo frameUniformInfo(graphicsUniform->buffers[i], 0, sizeof(FrameUBO));
 #ifdef USE_LIBKTX
         vk::DescriptorImageInfo huesImageInfo(huesTexture.sampler, huesTexture.view,
                 vk::ImageLayout::eShaderReadOnlyOptimal);
@@ -198,11 +255,7 @@ void NbodyScreen::prepareGraphicsPipeline() {
     GraphicsPipelineBuilder pipelineBuilder;
 
     auto vertShaderModule = app->createShaderModule(readBinaryFile("shaders/nbody.vert.spv"));
-#ifdef USE_LIBKTX
-    auto fragShaderModule = app->createShaderModule(readBinaryFile("shaders/nbodyKTX.frag.spv"));
-#else
-    auto fragShaderModule = app->createShaderModule(readBinaryFile("shaders/nbody.frag.spv"));
-#endif
+    auto fragShaderModule = app->createShaderModule(readBinaryFile(fragmentShaders[selectedFragmentShader]));
 
     pipelineBuilder.stages = { 
         {
@@ -259,31 +312,29 @@ void NbodyScreen::prepareGraphicsPipeline() {
 void NbodyScreen::prepareComputePipeline() {
     auto shaderData = generateShaderData(maxParticleCount);
 
-    computeSSBO = compute.createShaderStorage(shaderData.data(), sizeof(Particle) * shaderData.size());
-    computeUBO = compute.createUniformBuffer(sizeof(ComputeUBO));
-    compute.finalizeLayout();
+    computeSSBO = compute->createShaderStorage(shaderData.data(), sizeof(Particle) * shaderData.size());
+    computeUBO = compute->createUniformBuffer(sizeof(ComputeUBO));
+    compute->finalizeLayout();
 
-    {
+    if (selectedComputeShader == 1) {
         struct SpecializationData {
-            uint32_t sharedDataSize;
             float gravity;
             float power;
             float soften;
+            uint32_t sharedDataSize;
         } specializationData;
 
         vk::SpecializationMapEntry specializationMapEntries [] = {
-            vk::SpecializationMapEntry(0, offsetof(SpecializationData, sharedDataSize), sizeof(uint32_t)),
-            vk::SpecializationMapEntry(1, offsetof(SpecializationData, gravity), sizeof(float)),
-            vk::SpecializationMapEntry(2, offsetof(SpecializationData, power), sizeof(float)),
-            vk::SpecializationMapEntry(3, offsetof(SpecializationData, soften), sizeof(float)),
+            vk::SpecializationMapEntry(0, offsetof(SpecializationData, gravity), sizeof(float)),
+            vk::SpecializationMapEntry(1, offsetof(SpecializationData, power), sizeof(float)),
+            vk::SpecializationMapEntry(2, offsetof(SpecializationData, soften), sizeof(float)),
+            vk::SpecializationMapEntry(3, offsetof(SpecializationData, sharedDataSize), sizeof(uint32_t)),
         };
 
-        uint32_t hardwareMax = (uint32_t)(app->physicalDevice.getProperties().limits.maxComputeSharedMemorySize / sizeof(glm::vec4));
-        specializationData.sharedDataSize = std::min((uint32_t)1024, hardwareMax);
-
-        specializationData.gravity = 0.002f;
-        specializationData.power = 0.75f;
-        specializationData.soften = 0.05f;
+        specializationData.sharedDataSize = std::min(sharedDataSize, maxComputeSharedMemorySize);
+        specializationData.gravity = gravity;
+        specializationData.power = power;
+        specializationData.soften = soften;
 
         vk::SpecializationInfo specializationInfo(
                 std::size(specializationMapEntries),
@@ -292,15 +343,41 @@ void NbodyScreen::prepareComputePipeline() {
                 &specializationData
                 );
 
-        compute.addPipeline(readBinaryFile("shaders/nbodyp1.comp.spv"), "main", &specializationInfo);
+        compute->addPipeline(readBinaryFile(computeShaders[selectedComputeShader]), "main", &specializationInfo);
+    } else {
+        struct SpecializationData {
+            float gravity;
+            float power;
+            float soften;
+        } specializationData;
+
+        vk::SpecializationMapEntry specializationMapEntries [] = {
+            vk::SpecializationMapEntry(0, offsetof(SpecializationData, gravity), sizeof(float)),
+            vk::SpecializationMapEntry(1, offsetof(SpecializationData, power), sizeof(float)),
+            vk::SpecializationMapEntry(2, offsetof(SpecializationData, soften), sizeof(float)),
+        };
+
+        specializationData.gravity = gravity;
+        specializationData.power = power;
+        specializationData.soften = soften;
+
+        vk::SpecializationInfo specializationInfo(
+                std::size(specializationMapEntries),
+                specializationMapEntries,
+                sizeof(SpecializationData),
+                &specializationData
+                );
+
+        compute->addPipeline(readBinaryFile(computeShaders[selectedComputeShader]), "main", &specializationInfo);
+
     }
 
-    compute.addPipeline(readBinaryFile("shaders/nbodyp2.comp.spv"), "main");
+    compute->addPipeline(readBinaryFile("shaders/nbodyp2.comp.spv"), "main");
 
-    compute.recordCommands(maxParticleCount / workgroupSize, 1, 1);
+    compute->recordCommands(maxParticleCount / workgroupSize, 1, 1);
 
     // kickstart
-    compute.signalSemaphore();
+    compute->signalSemaphore();
 }
 
 
@@ -308,7 +385,7 @@ void NbodyScreen::prepareComputePipeline() {
 
 void NbodyScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo, vk::CommandBuffer commandBuffer, uint32_t index) {
     uint32_t graphicsQindex = app->queueFamilyIndices.graphics;
-    uint32_t computeQindex = compute.queueIndex;
+    uint32_t computeQindex = compute->queueIndex;
 
     // Compute shader barrier
     if (graphicsQindex != computeQindex) {
@@ -317,7 +394,7 @@ void NbodyScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo, v
                 vk::PipelineStageFlagBits::eVertexInput,
                 {},
                 0, nullptr,
-                compute.graphicsAcquireBarriers[index].size(), compute.graphicsAcquireBarriers[index].data(),
+                compute->graphicsAcquireBarriers[index].size(), compute->graphicsAcquireBarriers[index].data(),
                 0, nullptr);
     }
 
@@ -347,7 +424,7 @@ void NbodyScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo, v
                 vk::PipelineStageFlagBits::eComputeShader,
                 {},
                 0, nullptr,
-                compute.graphicsReleaseBarriers[index].size(), compute.graphicsReleaseBarriers[index].data(),
+                compute->graphicsReleaseBarriers[index].size(), compute->graphicsReleaseBarriers[index].data(),
                 0, nullptr);
     }
 }
@@ -365,59 +442,11 @@ void NbodyScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32
         computeUbo->particleCount = particleCount;
         computeUbo->delta = app->delta * timeMultiplier;
 
-        FrameUBO* ubo = (FrameUBO*)graphicsUniform.mappings[currentFrame];
+        FrameUBO* ubo = (FrameUBO*)graphicsUniform->mappings[currentFrame];
         ubo->colorShift = colorShift;
     }
 
-    try {
-        // Wait for compute shader to complete at vertex input stage (see kickstart)
-        // Wait for output image to become available at color attachment output stage
-        vk::Semaphore waitSemaphores[] = {
-            compute.sem,
-            app->imageAvailableSemaphores[currentFrame]
-        };
-        vk::PipelineStageFlags waitStages[] = {
-            vk::PipelineStageFlagBits::eVertexInput,
-            vk::PipelineStageFlagBits::eColorAttachmentOutput
-        };
-        vk::Semaphore signalSemaphores[] = {
-            graphics.sem,
-            app->renderFinishedSemaphores[currentFrame]
-        };
-
-        vk::SubmitInfo submitInfo(
-                std::size(waitSemaphores), waitSemaphores, waitStages,
-                1, bufferToSubmit,
-                std::size(signalSemaphores), signalSemaphores);
-
-        app->graphicsQueue.submit(submitInfo);
-    } catch (vk::SystemError const &err) {
-        throw std::runtime_error("Failed to submit graphics command buffer");
-    }
-    app->presentFrame();
-
-    try {
-        // Wait for graphics queue to render
-        vk::Semaphore waitSemaphores[] = {
-            graphics.sem,
-        };
-        vk::PipelineStageFlags waitStages[] = {
-            vk::PipelineStageFlagBits::eComputeShader
-        };
-        vk::Semaphore signalSemaphores[] = {
-            compute.sem,
-        };
-
-        vk::SubmitInfo submitInfo(
-                std::size(waitSemaphores), waitSemaphores, waitStages,
-                1, compute.getCommandBufferPointer(currentFrame),
-                std::size(signalSemaphores), signalSemaphores);
-
-        // signal fence here, we're done with this frame
-        compute.queue.submit(submitInfo, app->inFlightFences[currentFrame]);
-    } catch (vk::SystemError const &err) {
-        throw std::runtime_error("Failed to submit compute command buffer");
-    }
+    compute->submitSeqGraphicsCompute(bufferToSubmit, currentFrame, graphics.sem);
 }
 
 
@@ -433,33 +462,83 @@ void NbodyScreen::imgui() {
         ImGui::EndMainMenuBar();
     }
     if (showParticleSettings) {
-        ImGui::Begin("Particles", &showParticleSettings);
+        if (ImGui::Begin("N-Body Simulation", &showParticleSettings)) {
+            ImGui::PushItemWidth(-114);
+
+            if (ImGui::CollapsingHeader("Description")) {
+                ImGui::TextWrapped("%s", description);
+            }
+
+            if (ImGui::CollapsingHeader("Real-Time Settings")) {
+                ImGui::DragFloat("BG Brightness", &bgBrightness, 0.005f, 0.0f, 1.0f, "%.3f");
+                ImGui::DragFloat("Color Shift", &colorShift, 0.005f, 0.0f, 1.0f, "%.3f");
+
+                ImGui::Separator();
+
+                ImGui::DragFloat("Time Multiplier", &timeMultiplier, 0.005f, 0.0f, 10.0f, "%.3f");
+
+                ImGui::Separator();
+
+                ImGui::DragInt("Particle Count", (int*) &particleCount, 100, 1, maxParticleCount);
+
+                if (ImGui::Button("Restart")) {
+                }
+            }
+
+            if (ImGui::CollapsingHeader("Pipeline Settings")) {
+                ImGui::Combo("Fragment Shader", &selectedFragmentShader, fragmentShaderNames, std::size(fragmentShaderNames));
+                ImGuiTooltip( 
+                        "Fragment shader can sample color from textures (faster)"
+                        " or generate them procurdurally at each function call."
+                        );
+
 #ifndef USE_LIBKTX
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255,0,0,255));
-        ImGui::Text("WARNING: The program is compiled without KTX support.");
-        ImGui::Text("Performance will be significantly worse in this scene.");
-        ImGui::Text("Because the textures are used as LUTs.");
-        ImGui::PopStyleColor();
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255,25,25,255));
+                ImGui::TextWrapped(
+                        "WARNING: The program is compiled without KTX support. "
+                        "Textures and LUTs are not available in fragment shader.");
+                ImGui::PopStyleColor();
 #endif
 
-        ImGui::DragFloat("BG Brightness", &bgBrightness, 0.005f, 0.0f, 1.0f, "%.3f");
-        ImGui::DragFloat("Color Shift", &colorShift, 0.005f, 0.0f, 1.0f, "%.3f");
+                ImGui::Combo("Compute Shader", &selectedComputeShader, computeShaderNames, std::size(computeShaderNames));
 
-        ImGui::Separator();
+                ImGui::Separator();
 
-        ImGui::DragFloat("Time Multiplier", &timeMultiplier, 0.005f, 0.0f, 10.0f, "%.3f");
+                ImGui::TextUnformatted("Specialization Constants for Compute Shader");
 
-        ImGui::Separator();
+                ImGui::DragFloat("Gravity", &gravity, 0.0002f, 0.0f, 1.0f, "%.4f");
+                ImGui::DragFloat("Power", &power, 0.05f, 0.0f, 10.0f, "%.2f");
+                ImGui::DragFloat("Soften", &timeMultiplier, 0.005f, 0.0f, 10.0f, "%.3f");
 
-        ImGui::DragInt("Particle Count", (int*) &particleCount, 100, 1, maxParticleCount);
-        if (ImGui::Button("Restart")) {
+                if (selectedComputeShader == 1) {
+                    ImGui::DragInt("Shared Data", (int*) &sharedDataSize, 32, 32, maxComputeSharedMemorySize);
+                    ImGuiTooltip( 
+                            "The amount of shared data in the first compute shader pass. "
+                            "Used to speed up computations."
+                            );
+
+                    ImGui::Text("Max shared data with current device: %d", maxComputeSharedMemorySize);
+                }
+
+                ImGui::Separator();
+
+                if (ImGui::Button("Rebuild Pipeline")) {
+                    app->device->waitIdle();
+                    pipelineCleanup();
+                    buildPipeline();
+                }
+                ImGuiTooltip("Recreate the whole pipeline to apply new settings.");
+            }
+
+            ImGui::PopItemWidth();
         }
         ImGui::End();
     }
 }
 #endif
 
-NbodyScreen::~NbodyScreen() {
+
+void NbodyScreen::pipelineCleanup() {
     // Graphics pipeline cleanup
     app->device->destroyPipeline(graphics.pipeline);
     app->device->destroyPipelineLayout(graphics.pipelineLayout);
@@ -467,6 +546,21 @@ NbodyScreen::~NbodyScreen() {
     app->device->destroyDescriptorSetLayout(graphics.descriptorSetLayout);
 
     app->device->destroySemaphore(graphics.sem);
+
+    if (compute) {
+        delete compute;
+        compute = nullptr;
+    }
+
+    if (graphicsUniform) {
+        delete graphicsUniform;
+        graphicsUniform = nullptr;
+    }
+}
+
+
+NbodyScreen::~NbodyScreen() {
+    pipelineCleanup();
 
 #ifdef USE_LIBKTX
     // textures

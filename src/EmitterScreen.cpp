@@ -59,6 +59,14 @@ namespace {
         }
         return particles;
     }
+
+    const char* description =
+        "This is a minimal particle system implemented using compute shaders.\n\n"
+        "There is only a single compute pass, which updates the positions and velocities of "
+        "particles. The velocity of each particle is independent from the rest unlike an N-body "
+        "simulation. Consequently, the complexity is O(n), and millions of particles "
+        "can be simulated by leveraging parallelization on the GPU."
+        "";
 }
 
 
@@ -74,6 +82,10 @@ EmitterScreen::EmitterScreen(VulkanBaseApp* app):
     noclipCam.pitch = -30;
     noclipCam.yaw = 0.0;
     noclipCam.update_vectors();
+
+#ifndef USE_IMGUI
+    std::cout << "\nDESCRIPTION\n" << description << '\n' << std::endl;
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -297,55 +309,7 @@ void EmitterScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint
         ubo->colorShift = colorShift;
     }
 
-    try {
-        // Wait for compute shader to complete at vertex input stage (see kickstart)
-        // Wait for output image to become available at color attachment output stage
-        vk::Semaphore waitSemaphores[] = {
-            compute.sem,
-            app->imageAvailableSemaphores[currentFrame]
-        };
-        vk::PipelineStageFlags waitStages[] = {
-            vk::PipelineStageFlagBits::eVertexInput,
-            vk::PipelineStageFlagBits::eColorAttachmentOutput
-        };
-        vk::Semaphore signalSemaphores[] = {
-            graphics.sem,
-            app->renderFinishedSemaphores[currentFrame]
-        };
-
-        vk::SubmitInfo submitInfo(
-                std::size(waitSemaphores), waitSemaphores, waitStages,
-                1, bufferToSubmit,
-                std::size(signalSemaphores), signalSemaphores);
-
-        app->graphicsQueue.submit(submitInfo);
-    } catch (vk::SystemError const &err) {
-        throw std::runtime_error("Failed to submit graphics command buffer");
-    }
-    app->presentFrame();
-
-    try {
-        // Wait for graphics queue to render
-        vk::Semaphore waitSemaphores[] = {
-            graphics.sem,
-        };
-        vk::PipelineStageFlags waitStages[] = {
-            vk::PipelineStageFlagBits::eComputeShader
-        };
-        vk::Semaphore signalSemaphores[] = {
-            compute.sem,
-        };
-
-        vk::SubmitInfo submitInfo(
-                std::size(waitSemaphores), waitSemaphores, waitStages,
-                1, compute.getCommandBufferPointer(currentFrame),
-                std::size(signalSemaphores), signalSemaphores);
-
-        // signal fence here, we're done with this frame
-        compute.queue.submit(submitInfo, app->inFlightFences[currentFrame]);
-    } catch (vk::SystemError const &err) {
-        throw std::runtime_error("Failed to submit compute command buffer");
-    }
+    compute.submitSeqGraphicsCompute(bufferToSubmit, currentFrame, graphics.sem);
 }
 
 
@@ -361,21 +325,31 @@ void EmitterScreen::imgui() {
         ImGui::EndMainMenuBar();
     }
     if (showParticleSettings) {
-        ImGui::Begin("Particles", &showParticleSettings);
+        if (ImGui::Begin("Particle System", &showParticleSettings)) {
+            ImGui::PushItemWidth(-114);
 
-        ImGui::DragFloat("BG Brightness", &bgBrightness, 0.005f, 0.0f, 1.0f, "%.3f");
-        ImGui::DragFloat("Color Shift", &colorShift, 0.005f, 0.0f, 1.0f, "%.3f");
+            if (ImGui::CollapsingHeader("Description")) {
+                ImGui::TextWrapped("%s", description);
+            }
 
-        ImGui::Separator();
+            if (ImGui::CollapsingHeader("Real-Time Settings")) {
+                ImGui::DragFloat("BG Brightness", &bgBrightness, 0.005f, 0.0f, 1.0f, "%.3f");
+                ImGui::DragFloat("Color Shift", &colorShift, 0.005f, 0.0f, 1.0f, "%.3f");
 
-        ImGui::DragFloat("Base Speed", &baseSpeed, 0.005f, 0.0f, 10.0f, "%.3f");
-        ImGui::DragFloat("Speed Variation", &speedVariation, 0.005f, 0.0f, 10.0f, "%.3f");
-        ImGui::DragFloat("Range", &particleRange, 0.25f, 1.0f, 100.0f, "%.3f");
+                ImGui::Separator();
 
-        ImGui::Separator();
+                ImGui::DragFloat("Base Speed", &baseSpeed, 0.005f, 0.0f, 10.0f, "%.3f");
+                ImGui::DragFloat("Speed Variation", &speedVariation, 0.005f, 0.0f, 10.0f, "%.3f");
+                ImGui::DragFloat("Range", &particleRange, 0.25f, 1.0f, 100.0f, "%.3f");
 
-        ImGui::DragInt("Particle Count", (int*) &particleCount, 100, 1, maxParticleCount);
-        if (ImGui::Button("Restart")) restartParticles = true;
+                ImGui::Separator();
+
+                ImGui::DragInt("Particle Count", (int*) &particleCount, 100, 1, maxParticleCount);
+                if (ImGui::Button("Restart")) restartParticles = true;
+            }
+
+            ImGui::PopItemWidth();
+        }
         ImGui::End();
     }
 }

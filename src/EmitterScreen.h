@@ -27,7 +27,7 @@ private:
 
     const uint32_t workgroupSize = 256;
     uint32_t particleCount = 125000;
-    const uint32_t maxParticleCount = 256 * 1024;
+    const uint32_t maxParticleCount = 256 * 1024 * 4;
 
     float colorShift = 0.25f;
     float particleRange = 5.0f;

@@ -20,23 +20,32 @@ private:
         vk::Semaphore sem;
     } graphics;
 
-    ComputeSystem compute;
+    ComputeSystem* compute;
+    // NOTE: These resources belong to compute
     vk::Buffer* computeSSBO;
     FrameUniform* computeUBO;
 
-    FrameUniform graphicsUniform;
+    // This belongs to us
+    FrameUniform* graphicsUniform;
 
 #ifdef USE_LIBKTX
     TextureKTX huesTexture;
     TextureKTX particleTexture;
 #endif
 
+    void buildPipeline();
     void prepareGraphicsPipeline();
     void prepareComputePipeline();
+    void pipelineCleanup();
 
     float colorShift = 0.25f;
     float bgBrightness = 0.125f;
     float timeMultiplier = 0.05f;
+
+    uint32_t sharedDataSize = 1024;
+    float gravity = 0.002f;
+    float power = 0.75f;
+    float soften = 0.05f;
 
 public:
     const uint32_t workgroupSize = 256;
