@@ -385,13 +385,16 @@ void NbodyScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32
             app->renderFinishedSemaphores[currentFrame]
         };
 
-        app->graphicsQueue.submit(vk::SubmitInfo(
+        vk::SubmitInfo submitInfo(
                 std::size(waitSemaphores), waitSemaphores, waitStages,
                 1, bufferToSubmit,
-                std::size(signalSemaphores), signalSemaphores));
+                std::size(signalSemaphores), signalSemaphores);
+
+        app->graphicsQueue.submit(submitInfo);
     } catch (vk::SystemError const &err) {
         throw std::runtime_error("Failed to submit graphics command buffer");
     }
+    app->presentFrame();
 
     try {
         // Wait for graphics queue to render
@@ -405,12 +408,13 @@ void NbodyScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32
             compute.sem,
         };
 
-        compute.queue.submit(vk::SubmitInfo(
+        vk::SubmitInfo submitInfo(
                 std::size(waitSemaphores), waitSemaphores, waitStages,
                 1, compute.getCommandBufferPointer(currentFrame),
-                std::size(signalSemaphores), signalSemaphores),
-                // signal fence here, we're done with this frame
-                app->inFlightFences[currentFrame]);
+                std::size(signalSemaphores), signalSemaphores);
+
+        // signal fence here, we're done with this frame
+        compute.queue.submit(submitInfo, app->inFlightFences[currentFrame]);
     } catch (vk::SystemError const &err) {
         throw std::runtime_error("Failed to submit compute command buffer");
     }

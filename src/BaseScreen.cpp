@@ -23,6 +23,8 @@ void BaseScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32_
     } catch (vk::SystemError const &err) {
         throw std::runtime_error("Failed to submit draw command buffer");
     }
+
+    app->presentFrame();
 }
 
 #include "ModelViewScreen.h"

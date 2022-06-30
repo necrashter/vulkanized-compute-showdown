@@ -127,7 +127,7 @@ private:
 
     bool framebufferResized = false;
 
-protected:
+private:
     void initWindow() {
         glfwInit();
 
@@ -561,10 +561,15 @@ protected:
         }
     }
 
+    /*
+     * Rendering
+     */
+
+private:
+    uint32_t imageIndex;
     inline void renderFrame() {
         (void) device->waitForFences(1, &inFlightFences[currentFrame], VK_TRUE, std::numeric_limits<uint64_t>::max());
 
-        uint32_t imageIndex;
         try {
             vk::ResultValue result = device->acquireNextImageKHR(swapChain, std::numeric_limits<uint64_t>::max(),
                 imageAvailableSemaphores[currentFrame], nullptr);
@@ -598,8 +603,15 @@ protected:
             } catch (vk::SystemError const &err) {
                 throw std::runtime_error("Failed to submit draw command buffer");
             }
+
+            presentFrame();
         }
 
+        currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
+
+public:
+    void presentFrame() {
         vk::PresentInfoKHR presentInfo(
                 1, &renderFinishedSemaphores[currentFrame], // wait sem
                 1, &swapChain, &imageIndex);
@@ -618,9 +630,8 @@ protected:
             recreateSwapChain();
             return;
         }
-
-        currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
-    }   
+    }
+private:
 
     /*
         CHOOOSER FUNCTIONS
