@@ -129,7 +129,8 @@ public:
 
     // These are used while reading the model.
     // They are cleaned after this data is uploaded to GPU
-    std::vector<unsigned char> vertexData;
+    uint32_t totalVertexCount = 0;
+    std::vector<uint8_t> vertexData;
     std::vector<uint32_t> indexData;
 
 

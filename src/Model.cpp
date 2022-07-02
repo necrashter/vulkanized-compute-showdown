@@ -107,6 +107,16 @@ void Model::loadMaterials(tinygltf::Model& input) {
     }
 }
 
+namespace {
+    template<typename T>
+    inline void addIndices(const void* buffer, std::vector<uint32_t>& indexData, const size_t count, const uint32_t vertexStart) {
+        const T* buf = reinterpret_cast<const T*>(buffer);
+        for (size_t index = 0; index < count; index++) {
+            indexData.push_back(buf[index] + vertexStart);
+        }
+    }
+}
+
 void Model::loadNode(
         const tinygltf::Node& inputNode,
         const tinygltf::Model& input,
@@ -144,7 +154,7 @@ void Model::loadNode(
         for (size_t i = 0; i < mesh.primitives.size(); ++i) {
             const tinygltf::Primitive& gltfPrimitive = mesh.primitives[i];
             uint32_t firstIndex = static_cast<uint32_t>(indexData.size());
-            uint32_t vertexStart = static_cast<uint32_t>(vertexData.size());
+            uint32_t vertexStart = totalVertexCount;
             uint32_t indexCount = 0;
             // Vertices
             {
@@ -152,6 +162,7 @@ void Model::loadNode(
                 for (auto& attr: vertexAttributes) {
                     vertexCount = std::max(vertexCount, attr.loadBuffer(gltfPrimitive, input));
                 }
+                totalVertexCount += vertexCount;
 
                 // Append data to model's vertex buffer
                 for (size_t v = 0; v < vertexCount; ++v) {
@@ -169,31 +180,21 @@ void Model::loadNode(
 
                 indexCount += static_cast<uint32_t>(accessor.count);
 
+                const void* rawBuffer = &buffer.data[accessor.byteOffset + bufferView.byteOffset];
+                const size_t count = accessor.count;
+
                 switch (accessor.componentType) {
-                    case TINYGLTF_PARAMETER_TYPE_UNSIGNED_INT: {
-                        const uint32_t* buf = reinterpret_cast<const uint32_t*>(&buffer.data[accessor.byteOffset + bufferView.byteOffset]);
-                        for (size_t index = 0; index < accessor.count; index++) {
-                            indexData.push_back(buf[index] + vertexStart);
-                        }
+                    case TINYGLTF_PARAMETER_TYPE_UNSIGNED_INT:
+                        addIndices<uint32_t>(rawBuffer, indexData, count, vertexStart);
                         break;
-                    }
-                    case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT: {
-                        const uint16_t* buf = reinterpret_cast<const uint16_t*>(&buffer.data[accessor.byteOffset + bufferView.byteOffset]);
-                        for (size_t index = 0; index < accessor.count; index++) {
-                            indexData.push_back(buf[index] + vertexStart);
-                        }
+                    case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT:
+                        addIndices<uint16_t>(rawBuffer, indexData, count, vertexStart);
                         break;
-                    }
-                    case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE: {
-                        const uint8_t* buf = reinterpret_cast<const uint8_t*>(&buffer.data[accessor.byteOffset + bufferView.byteOffset]);
-                        for (size_t index = 0; index < accessor.count; index++) {
-                            indexData.push_back(buf[index] + vertexStart);
-                        }
+                    case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE:
+                        addIndices<uint8_t>(rawBuffer, indexData, count, vertexStart);
                         break;
-                    }
                     default:
-                        std::cerr << "Index component type " << accessor.componentType << " not supported!" << std::endl;
-                        return;
+                        throw std::runtime_error("Unsupported index component type");
                 }
             }
             Primitive primitive{};
