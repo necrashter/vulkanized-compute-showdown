@@ -1,28 +1,12 @@
 #version 450
 
-struct Particle {
-    vec4 pos;
-    vec4 vel;
-};
+#include "nbodycommon.comp"
 
-layout(std140, binding = 0) buffer Pos {
-    Particle particles[];
-};
-
-layout (local_size_x = 256) in;
-
-layout (binding = 1) uniform UBO {
-    uint particleCount;
-    float delta;
-} ubo;
-
+// second pass of nbody simulation
 void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= ubo.particleCount) return;	
 
-    vec4 position = particles[index].pos;
-    vec4 velocity = particles[index].vel;
-    position += ubo.delta * velocity;
-    particles[index].pos = position;
+    particles[index].pos += ubo.delta * particles[index].vel;
 }
 

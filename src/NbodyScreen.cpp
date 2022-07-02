@@ -85,6 +85,7 @@ namespace {
     int selectedFragmentShader = 0;
 
     uint32_t maxComputeSharedMemorySize;
+    uint32_t maxComputeWorkGroupSize;
 
     const char* computeShaders[] = {
         "shaders/nbodyp1naive.comp.spv",
@@ -106,9 +107,9 @@ namespace {
         "In the first pass, gravitational force between all bodies are computed to find the force "
         "inflicted on each particle, and the forces are applied to update the velocity. "
         "This pass has a computational complexity of O(n^2).\n\n"
-        "In the second pass, the positions are updated using Euler integration, i.e., "
-        "pos += vel * delta. This should be done in a separate pass for synchronization.\n\n"
-        "A shared memory in compute shader can be used to accelerate the computation."
+        "In the second pass, the positions are updated using Euler integration. This should "
+        "be done in a separate pass for synchronization.\n\n"
+        "A shared memory in compute shader can be used to accelerate the memory access."
         "";
 }
 
@@ -121,7 +122,9 @@ NbodyScreen::NbodyScreen(VulkanBaseApp* app):
     huesTexture.load(app, "../assets/hues.ktx");
     particleTexture.load(app, "../assets/particle.ktx");
 #endif
-    maxComputeSharedMemorySize = (uint32_t)(app->physicalDevice.getProperties().limits.maxComputeSharedMemorySize / sizeof(glm::vec4));
+    auto limits = app->physicalDevice.getProperties().limits;
+    maxComputeSharedMemorySize = (uint32_t)(limits.maxComputeSharedMemorySize / sizeof(glm::vec4));
+    maxComputeWorkGroupSize = limits.maxComputeWorkGroupSize[0];
 
     noclipCam.position = glm::vec3(-6*1.7320508075688772, 6, 0);
     noclipCam.pitch = -30;
@@ -316,22 +319,22 @@ void NbodyScreen::prepareComputePipeline() {
     computeUBO = compute->createUniformBuffer(sizeof(ComputeUBO));
     compute->finalizeLayout();
 
-    if (selectedComputeShader == 1) {
+    {
         struct SpecializationData {
             float gravity;
             float power;
             float soften;
-            uint32_t sharedDataSize;
+            uint32_t localSize;
         } specializationData;
 
         vk::SpecializationMapEntry specializationMapEntries [] = {
             vk::SpecializationMapEntry(0, offsetof(SpecializationData, gravity), sizeof(float)),
             vk::SpecializationMapEntry(1, offsetof(SpecializationData, power), sizeof(float)),
             vk::SpecializationMapEntry(2, offsetof(SpecializationData, soften), sizeof(float)),
-            vk::SpecializationMapEntry(3, offsetof(SpecializationData, sharedDataSize), sizeof(uint32_t)),
+            vk::SpecializationMapEntry(3, offsetof(SpecializationData, localSize), sizeof(uint32_t)),
         };
 
-        specializationData.sharedDataSize = std::min(sharedDataSize, maxComputeSharedMemorySize);
+        specializationData.localSize = std::min(workgroupSize, maxComputeSharedMemorySize);
         specializationData.gravity = gravity;
         specializationData.power = power;
         specializationData.soften = soften;
@@ -344,35 +347,8 @@ void NbodyScreen::prepareComputePipeline() {
                 );
 
         compute->addPipeline(readBinaryFile(computeShaders[selectedComputeShader]), "main", &specializationInfo);
-    } else {
-        struct SpecializationData {
-            float gravity;
-            float power;
-            float soften;
-        } specializationData;
-
-        vk::SpecializationMapEntry specializationMapEntries [] = {
-            vk::SpecializationMapEntry(0, offsetof(SpecializationData, gravity), sizeof(float)),
-            vk::SpecializationMapEntry(1, offsetof(SpecializationData, power), sizeof(float)),
-            vk::SpecializationMapEntry(2, offsetof(SpecializationData, soften), sizeof(float)),
-        };
-
-        specializationData.gravity = gravity;
-        specializationData.power = power;
-        specializationData.soften = soften;
-
-        vk::SpecializationInfo specializationInfo(
-                std::size(specializationMapEntries),
-                specializationMapEntries,
-                sizeof(SpecializationData),
-                &specializationData
-                );
-
-        compute->addPipeline(readBinaryFile(computeShaders[selectedComputeShader]), "main", &specializationInfo);
-
+        compute->addPipeline(readBinaryFile("shaders/nbodyp2.comp.spv"), "main", &specializationInfo);
     }
-
-    compute->addPipeline(readBinaryFile("shaders/nbodyp2.comp.spv"), "main");
 
     compute->recordCommands(maxParticleCount / workgroupSize, 1, 1);
 
@@ -508,17 +484,23 @@ void NbodyScreen::imgui() {
 
                 ImGui::DragFloat("Gravity", &gravity, 0.0002f, 0.0f, 1.0f, "%.4f");
                 ImGui::DragFloat("Power", &power, 0.05f, 0.0f, 10.0f, "%.2f");
-                ImGui::DragFloat("Soften", &timeMultiplier, 0.005f, 0.0f, 10.0f, "%.3f");
+                ImGui::DragFloat("Soften", &soften, 0.005f, 0.0f, 10.0f, "%.3f");
 
+                uint32_t maxWorkGroup = maxComputeWorkGroupSize;
                 if (selectedComputeShader == 1) {
-                    ImGui::DragInt("Shared Data", (int*) &sharedDataSize, 32, 32, maxComputeSharedMemorySize);
-                    ImGuiTooltip( 
-                            "The amount of shared data in the first compute shader pass. "
-                            "Used to speed up computations."
-                            );
-
-                    ImGui::Text("Max shared data with current device: %d", maxComputeSharedMemorySize);
+                    maxWorkGroup = std::min(maxWorkGroup, maxComputeSharedMemorySize);
                 }
+                if (maxWorkGroup < workgroupSize) workgroupSize = maxWorkGroup;
+                ImGui::DragInt("Workgroup Size", (int*) &workgroupSize, 8, 8, maxWorkGroup);
+                ImGuiTooltip( 
+                        "Number of threads in a work group.\n"
+                        "Also equal to the amount of shared data in the first compute shader pass (if enabled)."
+                        );
+
+                ImGui::Text(
+                        "Max work group size: %d\nMax shared data: %d",
+                        maxComputeWorkGroupSize, maxComputeSharedMemorySize);
+                ImGuiTooltip("Limits of the current GPU");
 
                 ImGui::Separator();
 

@@ -42,15 +42,14 @@ private:
     float bgBrightness = 0.125f;
     float timeMultiplier = 0.05f;
 
-    uint32_t sharedDataSize = 1024;
     float gravity = 0.002f;
     float power = 0.75f;
     float soften = 0.05f;
+    uint32_t workgroupSize = 256;
 
 public:
-    const uint32_t workgroupSize = 256;
     uint32_t particleCount = maxParticleCount;
-    constexpr static uint32_t particlesPerAttractor = 4 * 1024;
+    constexpr static uint32_t particlesPerAttractor = 2 * 1024;
     constexpr static glm::vec3 attractors[] = {
         glm::vec3(5.0f, 0.0f, 0.0f),
         glm::vec3(-5.0f, 0.0f, 0.0f),
