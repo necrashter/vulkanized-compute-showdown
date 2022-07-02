@@ -1,6 +1,6 @@
 #version 450
 
-#include "nbodycommon.comp"
+#include "lib/nbodycommon.comp"
 
 // Share data between computer shader invocations to speed up caluclations
 shared vec4 sharedData[LOCAL_SIZE];

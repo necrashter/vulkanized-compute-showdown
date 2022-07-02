@@ -1,6 +1,6 @@
 #version 450
 
-#include "nbodycommon.comp"
+#include "lib/nbodycommon.comp"
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
