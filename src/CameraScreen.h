@@ -37,7 +37,7 @@ public:
         CameraUBO ubo {
             // glm::lookAt(cameraPosition, glm::vec3(0.0f, 0.0f, 0.0f), WORLD_UP),
             noclipCam.get_view_matrix(),
-            glm::perspective(glm::radians(fov), app->swapChainExtent.width / (float) app->swapChainExtent.height, 0.02f, 100.0f),
+            glm::perspective(glm::radians(fov), app->swapChainExtent.width / (float) app->swapChainExtent.height, 0.02f, 1000.0f),
             glm::vec4(
                     noclipCam.position,
                     app->swapChainExtent.width

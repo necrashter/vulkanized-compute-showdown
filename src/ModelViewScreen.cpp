@@ -4,6 +4,9 @@ ModelViewScreen::ModelViewScreen(VulkanBaseApp* app):
     CameraScreen(app),
     model(app)
 {
+    model.addVertexAttribute("POSITION", vk::Format::eR32G32B32Sfloat);
+    model.addVertexAttribute("NORMAL", vk::Format::eR32G32B32Sfloat);
+    model.addVertexAttribute("TEXCOORD_0", vk::Format::eR32G32Sfloat);
     model.loadFile("../assets/FlightHelmet/FlightHelmet.gltf");
     model.createBuffers();
 
@@ -95,8 +98,8 @@ ModelViewScreen::ModelViewScreen(VulkanBaseApp* app):
         } 
     };
 
-    auto bindingDescription = Model::vertexBindingDescription;
-    auto attributeDescriptions = Model::vertexAttributeDescription;
+    auto bindingDescription = model.getVertexInputBindingDescription();
+    auto attributeDescriptions = model.getVertexAttributeDescriptions();
 
     pipelineBuilder.vertexInput.vertexBindingDescriptionCount = 1;
     pipelineBuilder.vertexInput.pVertexBindingDescriptions = &bindingDescription;

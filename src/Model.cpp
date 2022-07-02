@@ -1,6 +1,50 @@
 #include "Model.h"
 #include "log.h"
 
+/**
+ * VERTEX ATTRIBUTES
+ */
+
+size_t getFormatSize(vk::Format format) {
+    switch(format) {
+        case vk::Format::eR32Sfloat:
+        case vk::Format::eR32Sint:
+        case vk::Format::eR32Uint:
+            return 4;
+        case vk::Format::eR32G32Sfloat:
+        case vk::Format::eR32G32Sint:
+        case vk::Format::eR32G32Uint:
+            return 8;
+        case vk::Format::eR32G32B32Sfloat:
+        case vk::Format::eR32G32B32Sint:
+        case vk::Format::eR32G32B32Uint:
+            return 12;
+        case vk::Format::eR32G32B32A32Sfloat:
+        case vk::Format::eR32G32B32A32Sint:
+        case vk::Format::eR32G32B32A32Uint:
+            return 16;
+        default:
+            throw std::runtime_error("Unknown format in getFormatSize");
+    }
+}
+
+VertexAttr::VertexAttr(const std::string& name, vk::Format format):
+    name(name), format(format), size(getFormatSize(format)), buffer(nullptr) {
+}
+
+size_t VertexAttr::loadBuffer(const tinygltf::Primitive& primitive, const tinygltf::Model& input) {
+    auto it = primitive.attributes.find(name);
+    if (it != primitive.attributes.end()) {
+        const tinygltf::Accessor& accessor = input.accessors[it->second];
+        const tinygltf::BufferView& view = input.bufferViews[accessor.bufferView];
+        buffer = (const uint8_t*)&(input.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]);
+        return accessor.count;
+    } else {
+        buffer = nullptr;
+        return 0;
+    }
+}
+
 
 /*
    LOADING
@@ -68,6 +112,7 @@ void Model::loadNode(
         const tinygltf::Model& input,
         Node* parent) {
     Node node;
+    node.name = inputNode.name;
     node.matrix = glm::mat4(1.0f);
 
     // Get the local node matrix
@@ -96,47 +141,24 @@ void Model::loadNode(
     if (inputNode.mesh > -1) {
         const tinygltf::Mesh mesh = input.meshes[inputNode.mesh];
         // Iterate through all primitives of this node's mesh
-        for (size_t i = 0; i < mesh.primitives.size(); i++) {
+        for (size_t i = 0; i < mesh.primitives.size(); ++i) {
             const tinygltf::Primitive& gltfPrimitive = mesh.primitives[i];
             uint32_t firstIndex = static_cast<uint32_t>(indexData.size());
             uint32_t vertexStart = static_cast<uint32_t>(vertexData.size());
             uint32_t indexCount = 0;
             // Vertices
             {
-                const float* positionBuffer = nullptr;
-                const float* normalsBuffer = nullptr;
-                const float* texCoordsBuffer = nullptr;
                 size_t vertexCount = 0;
-
-                // Get buffer data for vertex normals
-                if (gltfPrimitive.attributes.find("POSITION") != gltfPrimitive.attributes.end()) {
-                    const tinygltf::Accessor& accessor = input.accessors[gltfPrimitive.attributes.find("POSITION")->second];
-                    const tinygltf::BufferView& view = input.bufferViews[accessor.bufferView];
-                    positionBuffer = reinterpret_cast<const float*>(&(input.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
-                    vertexCount = accessor.count;
-                }
-                // Get buffer data for vertex normals
-                if (gltfPrimitive.attributes.find("NORMAL") != gltfPrimitive.attributes.end()) {
-                    const tinygltf::Accessor& accessor = input.accessors[gltfPrimitive.attributes.find("NORMAL")->second];
-                    const tinygltf::BufferView& view = input.bufferViews[accessor.bufferView];
-                    normalsBuffer = reinterpret_cast<const float*>(&(input.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
-                }
-                // Get buffer data for vertex texture coordinates
-                // gltf supports multiple sets, we only load the first one
-                if (gltfPrimitive.attributes.find("TEXCOORD_0") != gltfPrimitive.attributes.end()) {
-                    const tinygltf::Accessor& accessor = input.accessors[gltfPrimitive.attributes.find("TEXCOORD_0")->second];
-                    const tinygltf::BufferView& view = input.bufferViews[accessor.bufferView];
-                    texCoordsBuffer = reinterpret_cast<const float*>(&(input.buffers[view.buffer].data[accessor.byteOffset + view.byteOffset]));
+                for (auto& attr: vertexAttributes) {
+                    vertexCount = std::max(vertexCount, attr.loadBuffer(gltfPrimitive, input));
                 }
 
                 // Append data to model's vertex buffer
-                for (size_t v = 0; v < vertexCount; v++) {
-                    Vertex vert{};
-                    vert.pos = glm::vec4(glm::make_vec3(&positionBuffer[v * 3]), 1.0f);
-                    vert.normal = glm::normalize(glm::vec3(normalsBuffer ? glm::make_vec3(&normalsBuffer[v * 3]) : glm::vec3(0.0f)));
-                    vert.uv = texCoordsBuffer ? glm::make_vec2(&texCoordsBuffer[v * 2]) : glm::vec3(0.0f);
-                    vert.color = glm::vec3(1.0f);
-                    vertexData.push_back(vert);
+                for (size_t v = 0; v < vertexCount; ++v) {
+                    uint8_t* vert = &(*vertexData.insert(vertexData.end(), totalOffset, 0));
+                    for (uint32_t j = 0; j < vertexAttributes.size(); ++j) {
+                        vertexAttributes[j].fill(vert + vertexOffsets[j], v);
+                    }
                 }
             }
             // Indices
@@ -147,32 +169,31 @@ void Model::loadNode(
 
                 indexCount += static_cast<uint32_t>(accessor.count);
 
-                // gltf supports different component types of indices
                 switch (accessor.componentType) {
                     case TINYGLTF_PARAMETER_TYPE_UNSIGNED_INT: {
-                                                                   const uint32_t* buf = reinterpret_cast<const uint32_t*>(&buffer.data[accessor.byteOffset + bufferView.byteOffset]);
-                                                                   for (size_t index = 0; index < accessor.count; index++) {
-                                                                       indexData.push_back(buf[index] + vertexStart);
-                                                                   }
-                                                                   break;
-                                                               }
+                        const uint32_t* buf = reinterpret_cast<const uint32_t*>(&buffer.data[accessor.byteOffset + bufferView.byteOffset]);
+                        for (size_t index = 0; index < accessor.count; index++) {
+                            indexData.push_back(buf[index] + vertexStart);
+                        }
+                        break;
+                    }
                     case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT: {
-                                                                     const uint16_t* buf = reinterpret_cast<const uint16_t*>(&buffer.data[accessor.byteOffset + bufferView.byteOffset]);
-                                                                     for (size_t index = 0; index < accessor.count; index++) {
-                                                                         indexData.push_back(buf[index] + vertexStart);
-                                                                     }
-                                                                     break;
-                                                                 }
+                        const uint16_t* buf = reinterpret_cast<const uint16_t*>(&buffer.data[accessor.byteOffset + bufferView.byteOffset]);
+                        for (size_t index = 0; index < accessor.count; index++) {
+                            indexData.push_back(buf[index] + vertexStart);
+                        }
+                        break;
+                    }
                     case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE: {
-                                                                    const uint8_t* buf = reinterpret_cast<const uint8_t*>(&buffer.data[accessor.byteOffset + bufferView.byteOffset]);
-                                                                    for (size_t index = 0; index < accessor.count; index++) {
-                                                                        indexData.push_back(buf[index] + vertexStart);
-                                                                    }
-                                                                    break;
-                                                                }
+                        const uint8_t* buf = reinterpret_cast<const uint8_t*>(&buffer.data[accessor.byteOffset + bufferView.byteOffset]);
+                        for (size_t index = 0; index < accessor.count; index++) {
+                            indexData.push_back(buf[index] + vertexStart);
+                        }
+                        break;
+                    }
                     default:
-                                                                std::cerr << "Index component type " << accessor.componentType << " not supported!" << std::endl;
-                                                                return;
+                        std::cerr << "Index component type " << accessor.componentType << " not supported!" << std::endl;
+                        return;
                 }
             }
             Primitive primitive{};
@@ -193,6 +214,9 @@ void Model::loadNode(
 
 void Model::loadFile(const char* filename) {
     // TODO: can convert this to ModelManager and allow loading multiple models in it
+    if (vertexAttributes.empty()) {
+        throw std::runtime_error("No vertex attributes are set in Model");
+    }
     tinygltf::Model gltfInput;
     tinygltf::TinyGLTF gltfContext;
     std::string error, warning;
@@ -354,5 +378,13 @@ void Model::render(vk::CommandBuffer commandBuffer,
     for (auto& node : nodes) {
         renderNode(commandBuffer, pipelineLayout, node, matrix);
     }
+}
+
+
+Model::Node* Model::getNode(const std::string& name) {
+    for (auto& node : nodes) {
+        if (node.name == name) return &node;
+    }
+    return nullptr;
 }
 

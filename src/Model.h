@@ -18,40 +18,58 @@
 
 #include <iostream>
 
+class VertexAttr {
+public:
+    std::string name;
+    vk::Format format;
+    size_t size;
+
+    const uint8_t* buffer;
+
+    VertexAttr(const std::string& name, vk::Format format);
+
+    size_t loadBuffer(const tinygltf::Primitive& primitive, const tinygltf::Model& input);
+
+    inline void fill(void* target, size_t index) {
+        if (buffer) {
+            memcpy(target, (void*)&buffer[index*size], size);
+        }
+    }
+};
+
 
 class Model {
 public:
     VulkanContext* const context;
 
-    struct Vertex {
-        glm::vec3 pos;
-        glm::vec3 normal;
-        glm::vec2 uv;
-        glm::vec3 color;
-    };
+    std::vector<VertexAttr> vertexAttributes;
+    size_t totalOffset = 0;
+    std::vector<size_t> vertexOffsets;
 
-    constexpr static vk::VertexInputBindingDescription vertexBindingDescription = {
-        0, // binding
-        sizeof(Vertex), // stride
-        vk::VertexInputRate::eVertex,
-    };
-    constexpr static std::array<vk::VertexInputAttributeDescription, 4> vertexAttributeDescription {
-        vk::VertexInputAttributeDescription(
-                0, 0, // location and binding
-                vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos)),
+    inline void addVertexAttribute(const std::string& name, vk::Format format) {
+        vertexOffsets.push_back(totalOffset);
+        vertexAttributes.emplace_back(name, format);
+        totalOffset += vertexAttributes.back().size;
+    }
 
-        vk::VertexInputAttributeDescription(
-                1, 0, // location and binding
-                vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal)),
+    inline vk::VertexInputBindingDescription getVertexInputBindingDescription(uint32_t binding=0) {
+        return vk::VertexInputBindingDescription(
+                binding, // binding
+                totalOffset, // stride
+                vk::VertexInputRate::eVertex);
+    }
 
-        vk::VertexInputAttributeDescription(
-                2, 0, // location and binding
-                vk::Format::eR32G32Sfloat, offsetof(Vertex, uv)),
-
-        vk::VertexInputAttributeDescription(
-                3, 0, // location and binding
-                vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)),
-    };
+    inline std::vector<vk::VertexInputAttributeDescription> getVertexAttributeDescriptions(uint32_t binding=0) {
+        std::vector<vk::VertexInputAttributeDescription> out;
+        for (uint32_t i = 0; i < vertexAttributes.size(); ++i) {
+            out.emplace_back(
+                    i, binding, // location and binding
+                    vertexAttributes[i].format,
+                    vertexOffsets[i]
+                    );
+        }
+        return out;
+    }
 
     struct {
         vk::Buffer buffer;
@@ -79,6 +97,7 @@ public:
     // A node represents an object in the gltf scene graph
     struct Node;
     struct Node {
+        std::string name;
         Node* parent;
         glm::mat4 matrix;
         std::vector<Node> children;
@@ -110,7 +129,7 @@ public:
 
     // These are used while reading the model.
     // They are cleaned after this data is uploaded to GPU
-    std::vector<Model::Vertex> vertexData;
+    std::vector<unsigned char> vertexData;
     std::vector<uint32_t> indexData;
 
 
@@ -144,6 +163,8 @@ public:
     // Draw the gltf scene starting at the top-level-nodes
     void render(vk::CommandBuffer commandBuffer,
             vk::PipelineLayout pipelineLayout, glm::mat4 matrix = glm::mat4(1.0f));
+
+    Node* getNode(const std::string& name);
 
     /*
        CLENAUP
