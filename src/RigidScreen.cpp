@@ -1,4 +1,4 @@
-#include "NbodyRigidScreen.h"
+#include "RigidScreen.h"
 #include "glsl.h"
 #include <random>
 
@@ -7,8 +7,9 @@ namespace {
     const uint32_t InstanceBinding = 1;
 
     struct ComputeUBO {
-        alignas(4) glm::uint32 particleCount;
-        alignas(4) glm::float32 delta;
+        alignas(16) glm::vec4 cameraPosition;
+        alignas(4)  glm::uint32 particleCount;
+        alignas(4)  glm::float32 delta;
     };
 
     struct FrameUBO {
@@ -20,29 +21,30 @@ namespace {
         alignas(16) glm::vec4 vel;
     };
 
-    std::vector<Particle> generateShaderData(uint32_t count) {
+    std::vector<Particle> generateShaderData(uint32_t particlesPerAttractor, uint32_t activeAttractors) {
         std::default_random_engine randomEngine((unsigned)time(nullptr));
         std::normal_distribution<float> randomDist(0.0f, 1.0f);
 
-        std::vector<Particle> particles(count);
+        std::vector<Particle> particles(particlesPerAttractor * activeAttractors);
 
         uint32_t i = 0;
-        for (uint32_t ai = 0; ai < std::size(NbodyRigidScreen::attractors); ++ai) {
-            auto& attractor = NbodyRigidScreen::attractors[ai];
-            float color = ai / (float) std::size(NbodyRigidScreen::attractors);
+        for (uint32_t ai = 0; ai < activeAttractors; ++ai) {
+            auto& attractor = RigidScreen::attractors[ai];
+            float color = ai / (float) std::size(RigidScreen::attractors);
             // First particle
-            particles[i].pos = glm::vec4(attractor*1.5f, 9000);
-            particles[i].vel = glm::vec4(0.0f);
-            for (uint32_t j = 1; j < NbodyRigidScreen::particlesPerAttractor; ++j) {
+            particles[i].pos = glm::vec4(attractor*1.5f, 1.0f);
+            particles[i].vel = glm::vec4(0.0f, 0.0f, 0.0f, color);
+            ++i;
+            for (uint32_t j = 1; j < particlesPerAttractor; ++j) {
                 glm::vec3 relativePos(
-                        randomDist(randomEngine),
-                        randomDist(randomEngine),
-                        randomDist(randomEngine)
+                        1.5f + 0.5f * randomDist(randomEngine),
+                        j * 1.2f,
+                        1.5f + 0.5f * randomDist(randomEngine)
                         );
                 particles[i].pos = glm::vec4(
                         attractor + relativePos,
-                        // mass
-                        (randomDist(randomEngine) * 0.5f + 0.5f) * 75.0f
+                        // radius
+                        std::max(randomDist(randomEngine) * 0.25f + 0.5f, 0.1f)
                         );
                 glm::vec3 angular = glm::vec3(0.5f, 1.5f, 0.5f) * (((ai % 2) == 0) ? 1.0f : -1.0f);
                 glm::vec3 velocity = glm::cross(relativePos, angular) + glm::vec3(randomDist(randomEngine), randomDist(randomEngine), randomDist(randomEngine) * 0.025f);
@@ -54,22 +56,16 @@ namespace {
         return particles;
     }
 
+    const char* primitiveNames[] = {
+        "planetl0",
+        "planetl1",
+        "planetl2",
+        "asteroid0",
+        "asteroid1",
+    };
+
     uint32_t maxComputeSharedMemorySize;
     uint32_t maxComputeWorkGroupSize;
-
-    const char* computeShaders[] = {
-        "shaders/nbodyp1naive.comp.spv",
-        "shaders/nbodyp1shared.comp.spv",
-    };
-
-#ifdef USE_IMGUI
-    const char* computeShaderNames[] = {
-        "Naive Method",
-        "Shared Cache",
-    };
-#endif
-
-    int selectedComputeShader = 1;
 
     const char* description =
         "This is an epic simulation."
@@ -78,7 +74,7 @@ namespace {
 
 
 
-NbodyRigidScreen::NbodyRigidScreen(VulkanBaseApp* app):
+RigidScreen::RigidScreen(VulkanBaseApp* app):
     CameraScreen(app), compute(nullptr), graphicsUniform(nullptr), model(app)
 {
 #ifdef USE_LIBKTX
@@ -87,15 +83,19 @@ NbodyRigidScreen::NbodyRigidScreen(VulkanBaseApp* app):
 #endif
     model.addVertexAttribute("POSITION", vk::Format::eR32G32B32Sfloat);
     model.addVertexAttribute("NORMAL", vk::Format::eR32G32B32Sfloat);
-    model.addVertexAttribute("TEXCOORD_0", vk::Format::eR32G32Sfloat);
     model.loadFile("../assets/space.gltf");
     model.createBuffers();
-    if (Model::Node* node = model.getNode("planetl2")) {
-        planetPrimitive.firstIndex = node->primitives[0].firstIndex;
-        planetPrimitive.indexCount = node->primitives[0].indexCount;
-    } else {
-        throw std::runtime_error("There's no planet model in gltf file!");
+    for (uint32_t i = 0; i < std::size(primitiveNames); ++i) {
+        if (Model::Node* node = model.getNode(primitiveNames[i])) {
+            primitives.push_back({
+                node->primitives[0].firstIndex,
+                node->primitives[0].indexCount,
+            });
+        } else {
+            throw std::runtime_error("Requested model is not found in glTF file");
+        }
     }
+    selectedPrimitiveIndex = 2;
 
     auto limits = app->physicalDevice.getProperties().limits;
     maxComputeSharedMemorySize = (uint32_t)(limits.maxComputeSharedMemorySize / sizeof(glm::vec4));
@@ -114,11 +114,11 @@ NbodyRigidScreen::NbodyRigidScreen(VulkanBaseApp* app):
 }
 
 
-void NbodyRigidScreen::buildPipeline() {
+void RigidScreen::buildPipeline(void* oldData, size_t oldDataSize) {
     compute = new ComputeSystem(app);
     graphicsUniform = new FrameUniform(app, sizeof(FrameUBO));
     prepareGraphicsPipeline();
-    prepareComputePipeline();
+    prepareComputePipeline(oldData, oldDataSize);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -126,7 +126,7 @@ void NbodyRigidScreen::buildPipeline() {
 ////////////////////////////////////////////////////////////////////////
 
 
-void NbodyRigidScreen::prepareGraphicsPipeline() {
+void RigidScreen::prepareGraphicsPipeline() {
     // Create Descriptor Pool
     // ---------------------------------------------------------------
 
@@ -230,10 +230,10 @@ void NbodyRigidScreen::prepareGraphicsPipeline() {
     // Create Graphics Pipeline
     // ---------------------------------------------------------------
 
+    // Solid body pipeline
     GraphicsPipelineBuilder pipelineBuilder;
-
-    auto vertShaderModule = app->createShaderModule(readBinaryFile("shaders/space.vert.spv"));
-    auto fragShaderModule = app->createShaderModule(readBinaryFile("shaders/space.frag.spv"));
+    auto vertShaderModule = app->createShaderModule(readBinaryFile("shaders/nrigid.vert.spv"));
+    auto fragShaderModule = app->createShaderModule(readBinaryFile("shaders/nrigid.frag.spv"));
 
     pipelineBuilder.stages = { 
         {
@@ -292,7 +292,7 @@ void NbodyRigidScreen::prepareGraphicsPipeline() {
 }
 
 
-void NbodyRigidScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo, vk::CommandBuffer commandBuffer, uint32_t index) {
+void RigidScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo, vk::CommandBuffer commandBuffer, uint32_t index) {
     uint32_t graphicsQindex = app->queueFamilyIndices.graphics;
     uint32_t computeQindex = compute->queueIndex;
 
@@ -323,7 +323,7 @@ void NbodyRigidScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassIn
     commandBuffer.bindVertexBuffers(VertexBinding, 1, &model.vertices.buffer, offsets);
     commandBuffer.bindVertexBuffers(InstanceBinding, 1, computeSSBO, offsets);
     commandBuffer.bindIndexBuffer(model.indices.buffer, 0, vk::IndexType::eUint32);
-    commandBuffer.drawIndexed(planetPrimitive.indexCount, particleCount, planetPrimitive.firstIndex, 0, 0);
+    commandBuffer.drawIndexed(primitives[selectedPrimitiveIndex].indexCount, particleCount, primitives[selectedPrimitiveIndex].firstIndex, 0, 0);
 
     app->renderUI(commandBuffer);
     commandBuffer.endRenderPass();
@@ -341,11 +341,19 @@ void NbodyRigidScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassIn
 }
 
 
-
-void NbodyRigidScreen::prepareComputePipeline() {
-    auto shaderData = generateShaderData(maxParticleCount);
-
-    computeSSBO = compute->createShaderStorage(shaderData.data(), sizeof(Particle) * shaderData.size());
+void RigidScreen::prepareComputePipeline(void* oldData, size_t oldDataSize) {
+    if (oldData) {
+        computeSSBO = compute->createShaderStorage(
+                oldData, oldDataSize,
+                vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferSrc);
+    } else {
+        particleCount = particlesPerAttractor * activeAttractors;
+        auto shaderData = generateShaderData(particlesPerAttractor, activeAttractors);
+        computeSSBO = compute->createShaderStorage(
+                shaderData.data(),
+                sizeof(Particle) * shaderData.size(),
+                vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferSrc);
+    }
     computeUBO = compute->createUniformBuffer(sizeof(ComputeUBO));
     compute->finalizeLayout();
 
@@ -376,11 +384,13 @@ void NbodyRigidScreen::prepareComputePipeline() {
                 &specializationData
                 );
 
-        compute->addPipeline(readBinaryFile(computeShaders[selectedComputeShader]), "main", &specializationInfo);
-        compute->addPipeline(readBinaryFile("shaders/nbodyp2.comp.spv"), "main", &specializationInfo);
+        compute->addPipeline(readBinaryFile("shaders/nrigidp1.comp.spv"), "main", &specializationInfo);
+        compute->addPipeline(readBinaryFile("shaders/nrigidp2.comp.spv"), "main", &specializationInfo);
     }
 
-    compute->recordCommands(maxParticleCount / workgroupSize, 1, 1);
+    compute->recordCommands(
+            (particleCount + workgroupSize - 1) / workgroupSize,
+            1, 1);
 
     // kickstart
     compute->signalSemaphore();
@@ -389,15 +399,18 @@ void NbodyRigidScreen::prepareComputePipeline() {
 
 
 
-void NbodyRigidScreen::update(float delta) {
+void RigidScreen::update(float delta) {
     CameraScreen::update(delta);
 }
 
 
-void NbodyRigidScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32_t currentFrame) {
+void RigidScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32_t currentFrame) {
     updateUniformBuffer(currentFrame);
     {
         ComputeUBO* computeUbo = (ComputeUBO*)computeUBO->mappings[currentFrame];
+        computeUbo->cameraPosition = glm::vec4(
+                noclipCam.position,
+                cameraMassEnabled ? cameraMass : 0.0f);
         computeUbo->particleCount = particleCount;
         computeUbo->delta = app->delta * timeMultiplier;
 
@@ -410,7 +423,7 @@ void NbodyRigidScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, u
 
 
 #ifdef USE_IMGUI
-void NbodyRigidScreen::imgui() {
+void RigidScreen::imgui() {
     static bool showParticleSettings = true;
     CameraScreen::imgui();
     if (ImGui::BeginMainMenuBar()) {
@@ -436,29 +449,28 @@ void NbodyRigidScreen::imgui() {
 
                 ImGui::DragFloat("Time Multiplier", &timeMultiplier, 0.005f, 0.0f, 10.0f, "%.3f");
 
-                ImGui::Separator();
-
-                ImGui::DragInt("Particle Count", (int*) &particleCount, 100, 1, maxParticleCount);
-
-                if (ImGui::Button("Restart")) {
-                }
+                ImGui::Checkbox("Attract to Camera", &cameraMassEnabled);
+                ImGui::DragFloat("Camera Mass", &cameraMass, 10000.0f, -2e5, 2e5, "%.1f");
             }
 
             if (ImGui::CollapsingHeader("Pipeline Settings")) {
-                ImGui::Combo("Compute Shader", &selectedComputeShader, computeShaderNames, std::size(computeShaderNames));
+                ImGui::TextUnformatted("Graphics Pipeline");
+
+#ifndef USE_LIBKTX
+                ImGui::TextWrapped("Compile the program with KTX support for more options.");
+#endif
+
+                ImGui::Combo("Primitive", &selectedPrimitiveIndex, primitiveNames, std::size(primitiveNames));
+                ImGuiTooltip("The primitive model that will be used to render each particle.");
 
                 ImGui::Separator();
 
-                ImGui::TextUnformatted("Specialization Constants for Compute Shader");
+                ImGui::TextUnformatted("Compute Pipeline");
 
-                ImGui::DragFloat("Gravity", &gravity, 0.0002f, 0.0f, 1.0f, "%.4f");
-                ImGui::DragFloat("Power", &power, 0.05f, 0.0f, 10.0f, "%.2f");
-                ImGui::DragFloat("Soften", &soften, 0.005f, 0.0f, 10.0f, "%.3f");
+                ImGui::TextUnformatted("Specialization Constants");
 
                 uint32_t maxWorkGroup = maxComputeWorkGroupSize;
-                if (selectedComputeShader == 1) {
-                    maxWorkGroup = std::min(maxWorkGroup, maxComputeSharedMemorySize);
-                }
+                maxWorkGroup = std::min(maxWorkGroup, maxComputeSharedMemorySize);
                 if (maxWorkGroup < workgroupSize) workgroupSize = maxWorkGroup;
                 ImGui::DragInt("Workgroup Size", (int*) &workgroupSize, 8, 8, maxWorkGroup);
                 ImGuiTooltip( 
@@ -471,14 +483,34 @@ void NbodyRigidScreen::imgui() {
                         maxComputeWorkGroupSize, maxComputeSharedMemorySize);
                 ImGuiTooltip("Limits of the current GPU");
 
+                ImGui::DragFloat("Gravity", &gravity, 0.0002f, 0.0f, 1.0f, "%.4f");
+                ImGui::DragFloat("Power", &power, 0.05f, 0.0f, 10.0f, "%.2f");
+                ImGui::DragFloat("Soften", &soften, 0.005f, 0.0f, 10.0f, "%.3f");
+
                 ImGui::Separator();
 
-                if (ImGui::Button("Rebuild Pipeline")) {
+                ImGui::TextUnformatted("Starting Setup");
+
+                ImGui::DragInt("Particles", (int*) &particlesPerAttractor, 128, 128, maxParticlesPerAttractor);
+                ImGui::DragInt("Attractors", (int*) &activeAttractors, 1, 1, maxActiveAttractors);
+                ImGui::Text("Total particles will be %d", particlesPerAttractor*activeAttractors);
+
+                ImGui::Separator();
+
+                if (ImGui::Button("Rebuild Pipeline and State")) {
                     app->device->waitIdle();
                     pipelineCleanup();
                     buildPipeline();
                 }
                 ImGuiTooltip("Recreate the whole pipeline to apply new settings.");
+
+                if (ImGui::Button("Rebuild Pipeline, Preserve State")) {
+                    app->device->waitIdle();
+                    auto vec = compute->getShaderStorageData<Particle>(0);
+                    pipelineCleanup();
+                    buildPipeline(vec.data(), vec.size()*sizeof(vec[0]));
+                }
+                ImGuiTooltip("Recreate the whole pipeline, but preserve the simulation state.");
             }
 
             ImGui::PopItemWidth();
@@ -489,7 +521,7 @@ void NbodyRigidScreen::imgui() {
 #endif
 
 
-void NbodyRigidScreen::pipelineCleanup() {
+void RigidScreen::pipelineCleanup() {
     // Graphics pipeline cleanup
     app->device->destroyPipeline(graphics.pipeline);
     app->device->destroyPipelineLayout(graphics.pipelineLayout);
@@ -510,7 +542,7 @@ void NbodyRigidScreen::pipelineCleanup() {
 }
 
 
-NbodyRigidScreen::~NbodyRigidScreen() {
+RigidScreen::~RigidScreen() {
     pipelineCleanup();
 
     model.cleanup();

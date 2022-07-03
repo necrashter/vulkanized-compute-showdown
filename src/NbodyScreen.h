@@ -54,7 +54,7 @@ private:
     float cameraMass = 50000.0f;
     bool cameraMassEnabled = false;
 
-    float gravity = 0.002f;
+    float gravity = 0.0002f;
     float power = 0.75f;
     float soften = 0.05f;
     uint32_t workgroupSize = 256;

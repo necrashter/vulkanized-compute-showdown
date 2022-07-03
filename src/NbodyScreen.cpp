@@ -48,7 +48,8 @@ namespace {
             float color = ai / (float) std::size(NbodyScreen::attractors);
             // First particle
             particles[i].pos = glm::vec4(attractor*1.5f, 9000);
-            particles[i].vel = glm::vec4(0.0f);
+            particles[i].vel = glm::vec4(0.0f, 0.0f, 0.0f, color);
+            ++i;
             for (uint32_t j = 1; j < particlesPerAttractor; ++j) {
                 glm::vec3 relativePos(
                         randomDist(randomEngine),
@@ -461,7 +462,9 @@ void NbodyScreen::prepareComputePipeline(void* oldData, size_t oldDataSize) {
         compute->addPipeline(readBinaryFile("shaders/nbodyp2.comp.spv"), "main", &specializationInfo);
     }
 
-    compute->recordCommands(particleCount / workgroupSize, 1, 1);
+    compute->recordCommands(
+            (particleCount + workgroupSize - 1) / workgroupSize,
+            1, 1);
 
     // kickstart
     compute->signalSemaphore();

@@ -3,14 +3,14 @@
 #include "CameraScreen.h"
 #include "GraphicsPipelineBuilder.h"
 #include "ComputeSystem.h"
-#include "Model.h"
 
+#include "Model.h"
 #ifdef USE_LIBKTX
 #include "Texture.h"
 #endif
 
 
-class NbodyRigidScreen : public CameraScreen {
+class RigidScreen : public CameraScreen {
 private:
     struct {
         vk::DescriptorSetLayout descriptorSetLayout;
@@ -37,38 +37,42 @@ private:
         uint32_t firstIndex;
         uint32_t indexCount;
     };
-    Primitive planetPrimitive;
+    std::vector<Primitive> primitives;
+    int selectedPrimitiveIndex;
     Model model;
 
-    void buildPipeline();
+    void buildPipeline(void* oldData=nullptr, size_t oldDataSize=0);
     void prepareGraphicsPipeline();
-    void prepareComputePipeline();
+    void prepareComputePipeline(void* oldData=nullptr, size_t oldDataSize=0);
     void pipelineCleanup();
 
     float colorShift = 0.25f;
     float bgBrightness = 0.125f;
     float timeMultiplier = 0.05f;
+    float cameraMass = 50000.0f;
+    bool cameraMassEnabled = false;
 
-    float gravity = 0.002f;
+    float gravity = 1.0f;
     float power = 0.75f;
     float soften = 0.05f;
     uint32_t workgroupSize = 256;
 
 public:
-    uint32_t particleCount = maxParticleCount/4;
-    constexpr static uint32_t particlesPerAttractor = 2 * 1024;
+    uint32_t particleCount;
+    uint32_t particlesPerAttractor = 1;
+    constexpr static uint32_t maxParticlesPerAttractor = 6*1024;
+    uint32_t activeAttractors = 6;
     constexpr static glm::vec3 attractors[] = {
+        glm::vec3(0.0f, 4.0f, 0.0f),
         glm::vec3(5.0f, 0.0f, 0.0f),
         glm::vec3(-5.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 0.0f, 5.0f),
         glm::vec3(0.0f, 0.0f, -5.0f),
-        glm::vec3(0.0f, 4.0f, 0.0f),
-        glm::vec3(0.0f, -8.0f, 0.0f),
     };
-    constexpr static uint32_t maxParticleCount = std::size(attractors) * particlesPerAttractor;
+    constexpr static uint32_t maxActiveAttractors = std::size(attractors);
 
 public:
-    NbodyRigidScreen(VulkanBaseApp* app);
+    RigidScreen(VulkanBaseApp* app);
 
     virtual void recordRenderCommands(vk::RenderPassBeginInfo, vk::CommandBuffer, uint32_t) override;
     virtual void submitGraphics(const vk::CommandBuffer*, uint32_t) override;
@@ -78,6 +82,6 @@ public:
     virtual void imgui() override;
 #endif
 
-    virtual ~NbodyRigidScreen();
+    virtual ~RigidScreen();
 };
 

@@ -1,8 +1,8 @@
 #version 450
 
-#include "lib/nbodycommon.comp"
+#include "lib/nrigidcommon.comp"
 
-// Second pass of nbody simulation
+// Euler integration
 void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= ubo.particleCount) return;

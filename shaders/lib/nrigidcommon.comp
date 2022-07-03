@@ -1,0 +1,81 @@
+/**
+ * Common data used in all compute shaders of nrigid simulation.
+ */
+
+struct Particle {
+    // x,y,z postion; w mass
+    vec4 pos;
+    // x,y,z velocity; w hue
+    vec4 vel;
+};
+
+layout(std140, binding = 0) buffer Pos {
+    Particle particles[];
+};
+
+layout (binding = 1) uniform UBO {
+	vec4 cameraPosition;
+    uint particleCount;
+    float delta;
+} ubo;
+
+layout (constant_id = 0) const float GRAVITY = 0.002;
+layout (constant_id = 1) const float POWER = 0.75;
+layout (constant_id = 2) const float SOFTEN = 0.0075;
+layout (constant_id = 3) const uint LOCAL_SIZE = 256;
+layout (local_size_x_id = 3, local_size_y = 1, local_size_z = 1) in;
+
+
+void applyForce(in vec4 pos, in vec4 other, inout vec3 vel, inout vec3 acc) {
+    const vec3 dir = other.xyz - pos.xyz;
+    const float dirlen = length(dir);
+    if (dirlen <= 1e-6) return;
+    if (dirlen <= other.w + pos.w) {
+        // collision
+        const vec3 normal = normalize(dir);
+        const float projnor = dot(normal, vel);
+        if (projnor > 0) {
+            const vec3 velnor = -projnor * normal;
+            const vec3 veltan = vel + velnor;
+            vel = veltan + velnor * 0.5f;
+        }
+    }
+}
+
+const float BOUND = 20.0f;
+const vec3 minBounds = vec3(-BOUND, -5.0f, -BOUND);
+const vec3 maxBounds = vec3(BOUND, 10000, BOUND);
+
+void collideBounds(in vec4 pos, inout vec3 vel) {
+    vec3 normal = vec3(0.0);
+    if (pos.x <= minBounds.x) normal.x -= 1.0f;
+    if (pos.y <= minBounds.y) normal.y -= 1.0f;
+    if (pos.z <= minBounds.z) normal.z -= 1.0f;
+    if (pos.x >= maxBounds.x) normal.x += 1.0f;
+    if (pos.y >= maxBounds.y) normal.y += 1.0f;
+    if (pos.z >= maxBounds.z) normal.z += 1.0f;
+
+    if (dot(normal, normal) > 0) {
+        normal = normalize(normal);
+        const float projnor = dot(normal, vel);
+        if (projnor > 0) {
+            const vec3 velnor = -projnor * normal;
+            const vec3 veltan = vel + velnor;
+            vel = veltan + velnor * 0.5f;
+        }
+    }
+}
+
+
+void applyCameraForce(in vec4 pos, inout vec3 acc) {
+    const vec3 dir = ubo.cameraPosition.xyz - pos.xyz;
+    const float mass = ubo.cameraPosition.w;
+    acc += GRAVITY * dir * mass / pow(dot(dir, dir) + SOFTEN, POWER);
+}
+
+
+void shiftColor(inout float hue) {
+    hue += 0.1 * ubo.delta;
+    if (hue > 1.0) hue -= 1.0;
+}
+
