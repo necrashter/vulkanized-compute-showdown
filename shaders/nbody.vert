@@ -9,8 +9,7 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 layout(location = 0) in vec4 pos;
 layout(location = 1) in vec4 vel;
 
-layout(location = 0) out vec3 fragPos;
-layout(location = 1) out float fragColor;
+layout(location = 0) out float fragColor;
 
 void main() {
     const float mass = pos.w;

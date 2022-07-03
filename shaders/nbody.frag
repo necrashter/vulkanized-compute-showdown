@@ -12,8 +12,7 @@ layout(set = 0, binding = 1) uniform FrameUBO {
 	float colorShift;
 } particle;
 
-layout(location = 0) in vec3 pos;
-layout(location = 1) in float color;
+layout(location = 0) in float color;
 
 layout(location = 0) out vec4 outColor;
 
