@@ -264,11 +264,11 @@ void NbodyRigidScreen::prepareGraphicsPipeline() {
     // Per-Instance attributes
     attributeDescriptions.emplace_back(
             4, InstanceBinding, // location and binding
-            vk::Format::eR32G32B32A32Sfloat, offsetof(Particle, pos)),
+            vk::Format::eR32G32B32A32Sfloat, offsetof(Particle, pos));
 
     attributeDescriptions.emplace_back(
             5, InstanceBinding, // location and binding
-            vk::Format::eR32G32B32A32Sfloat, offsetof(Particle, vel)),
+            vk::Format::eR32G32B32A32Sfloat, offsetof(Particle, vel));
 
     pipelineBuilder.vertexInput.vertexBindingDescriptionCount = std::size(bindingDescriptions);
     pipelineBuilder.vertexInput.pVertexBindingDescriptions = bindingDescriptions;

@@ -4,6 +4,7 @@
 #include "GraphicsPipelineBuilder.h"
 #include "ComputeSystem.h"
 
+#include "Model.h"
 #ifdef USE_LIBKTX
 #include "Texture.h"
 #endif
@@ -32,10 +33,19 @@ private:
     TextureKTX huesTexture;
     TextureKTX particleTexture;
 #endif
+    struct Primitive {
+        uint32_t firstIndex;
+        uint32_t indexCount;
+    };
+    std::vector<Primitive> primitives;
+    int selectedPrimitiveIndex;
+    Model model;
 
-    void buildPipeline();
+    uint32_t drawMode;
+
+    void buildPipeline(void* oldData=nullptr, size_t oldDataSize=0);
     void prepareGraphicsPipeline();
-    void prepareComputePipeline();
+    void prepareComputePipeline(void* oldData=nullptr, size_t oldDataSize=0);
     void pipelineCleanup();
 
     float colorShift = 0.25f;
@@ -48,8 +58,11 @@ private:
     uint32_t workgroupSize = 256;
 
 public:
-    uint32_t particleCount = maxParticleCount;
-    constexpr static uint32_t particlesPerAttractor = 2 * 1024;
+    uint32_t particleCount;
+    uint32_t particlesPerAttractor = 2 * 1024;
+    constexpr static uint32_t maxParticlesPerAttractor = 6*1024;
+    uint32_t activeAttractors = 6;
+    constexpr static uint32_t maxActiveAttractors = 6;
     constexpr static glm::vec3 attractors[] = {
         glm::vec3(5.0f, 0.0f, 0.0f),
         glm::vec3(-5.0f, 0.0f, 0.0f),
@@ -58,7 +71,6 @@ public:
         glm::vec3(0.0f, 4.0f, 0.0f),
         glm::vec3(0.0f, -8.0f, 0.0f),
     };
-    constexpr static uint32_t maxParticleCount = std::size(attractors) * particlesPerAttractor;
 
 public:
     NbodyScreen(VulkanBaseApp* app);

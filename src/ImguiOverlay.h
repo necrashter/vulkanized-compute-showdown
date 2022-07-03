@@ -86,4 +86,16 @@ inline void ImGuiTooltip(const char* text) {
     }
 }
 
+inline void ImGuiTooltipCombo(const char* name, int* index, const char** names, const char** tooltips, int size) {
+    if (ImGui::BeginCombo(name, names[*index])) {
+        for (int n = 0; n < size; ++n) {
+            const bool is_selected = (*index == n);
+            if (ImGui::Selectable(names[n], is_selected)) *index = n;
+            if (is_selected) ImGui::SetItemDefaultFocus();
+            ImGuiTooltip(tooltips[n]);
+        }
+        ImGui::EndCombo();
+    }
+}
+
 #endif

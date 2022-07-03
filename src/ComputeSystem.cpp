@@ -11,7 +11,7 @@ ComputeSystem::ComputeSystem(VulkanBaseApp* app): app(app) {
 ////////////////////////////////////////////////////////////////////////
 
 
-vk::Buffer* ComputeSystem::createShaderStorage(const void* input, size_t size) {
+vk::Buffer* ComputeSystem::createShaderStorage(const void* input, size_t size, vk::BufferUsageFlags usage) {
     if (size == 0) {
         throw std::runtime_error("Compute Shader Storage Buffer size is 0");
     }
@@ -33,7 +33,7 @@ vk::Buffer* ComputeSystem::createShaderStorage(const void* input, size_t size) {
     app->createBuffer(
             size,
             // NOTE: compute shader storageBuffer is also used as vertex buffer
-            vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
+            usage | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
             vk::MemoryPropertyFlagBits::eDeviceLocal,
             storage.buffer, storage.memory);
     app->copyBuffer(stagingBuffer, storage.buffer, size);
@@ -53,6 +53,25 @@ vk::Buffer* ComputeSystem::createShaderStorage(const void* input, size_t size) {
     descriptors.push_back(&storage);
 
     return &storage.buffer;
+}
+
+vk::Buffer* ComputeSystem::appendShaderStorage(std::pair<ComputeSystem::ComputeStorage, vk::DescriptorSetLayoutBinding> pair) {
+    storageBuffers.push_back(std::move(pair.first));
+    auto& storage = storageBuffers.back();
+    uint32_t bindingIndex = (uint32_t) bindings.size();
+    pair.second.binding = bindingIndex;
+    descriptors.push_back(&storage);
+
+    return &storage.buffer;
+}
+
+std::pair<ComputeSystem::ComputeStorage, vk::DescriptorSetLayoutBinding> ComputeSystem::moveShaderStorage(uint32_t index) {
+    std::pair<ComputeStorage, vk::DescriptorSetLayoutBinding> output = {
+        storageBuffers[index], bindings[index]
+    };
+    storageBuffers.erase(storageBuffers.begin() + index);
+    bindings.erase(bindings.begin() + index);
+    return output;
 }
 
 

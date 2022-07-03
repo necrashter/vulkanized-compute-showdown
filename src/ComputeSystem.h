@@ -59,7 +59,41 @@ public:
 
     // Create SSBO (Shader Storage Object) initialized with the given data.
     // Return pointer to create vk::Buffer (for binding as vertex buffer)
-    vk::Buffer* createShaderStorage(const void* data, size_t size);
+    vk::Buffer* createShaderStorage(const void* data, size_t size, vk::BufferUsageFlags usage = vk::BufferUsageFlagBits::eVertexBuffer);
+
+    // Remove the shader storage with given index from this class and return it.
+    std::pair<ComputeStorage, vk::DescriptorSetLayoutBinding> moveShaderStorage(uint32_t index);
+
+    // Append a previously removed shader storage
+    vk::Buffer* appendShaderStorage(std::pair<ComputeStorage, vk::DescriptorSetLayoutBinding> target);
+
+    // Get the contents of SSBO from GPU.
+    // SSBO must have been created with transfer source destination flag.
+    // Creates a staging buffer! Not suitable for real-time usage.
+    template<typename T>
+    std::vector<T> getShaderStorageData(uint32_t index) {
+        auto& storage = storageBuffers[index];
+        auto size = storage.size;
+        std::vector<T> out(size / sizeof(T));
+
+        vk::Buffer stagingBuffer;
+        vk::DeviceMemory stagingBufferMemory;
+        app->createBuffer(
+                size,
+                vk::BufferUsageFlagBits::eTransferDst,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                stagingBuffer, stagingBufferMemory);
+        app->copyBuffer(storage.buffer, stagingBuffer, size);
+
+        void* data = app->device->mapMemory(stagingBufferMemory, 0, size);
+        memcpy(out.data(), data, size);
+        app->device->unmapMemory(stagingBufferMemory);
+
+        app->device->destroyBuffer(stagingBuffer);
+        app->device->freeMemory(stagingBufferMemory);
+        
+        return out;
+    }
 
     // Create uniform storage buffer
     // Return pointer (binding point for uniform buffer)
