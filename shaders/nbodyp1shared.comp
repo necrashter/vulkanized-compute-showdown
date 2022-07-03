@@ -29,6 +29,7 @@ void main() {
         memoryBarrierShared();
         barrier();
     }
+	applyCameraForce(pos, acc);
 
     particles[index].vel.xyz += ubo.delta * acc;
 

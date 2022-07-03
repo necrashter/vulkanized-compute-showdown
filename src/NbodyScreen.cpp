@@ -7,8 +7,9 @@ namespace {
     const uint32_t InstanceBinding = 1;
 
     struct ComputeUBO {
-        alignas(4) glm::uint32 particleCount;
-        alignas(4) glm::float32 delta;
+        alignas(16) glm::vec4 cameraPosition;
+        alignas(4)  glm::uint32 particleCount;
+        alignas(4)  glm::float32 delta;
     };
 
     struct FrameUBO {
@@ -532,6 +533,9 @@ void NbodyScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32
     updateUniformBuffer(currentFrame);
     {
         ComputeUBO* computeUbo = (ComputeUBO*)computeUBO->mappings[currentFrame];
+        computeUbo->cameraPosition = glm::vec4(
+                noclipCam.position,
+                cameraMassEnabled ? cameraMass : 0.0f);
         computeUbo->particleCount = particleCount;
         computeUbo->delta = app->delta * timeMultiplier;
 
@@ -569,6 +573,9 @@ void NbodyScreen::imgui() {
                 ImGui::Separator();
 
                 ImGui::DragFloat("Time Multiplier", &timeMultiplier, 0.005f, 0.0f, 10.0f, "%.3f");
+
+                ImGui::Checkbox("Attract to Camera", &cameraMassEnabled);
+                ImGui::DragFloat("Camera Mass", &cameraMass, 10000.0f, -2e5, 2e5, "%.1f");
             }
 
             if (ImGui::CollapsingHeader("Pipeline Settings")) {

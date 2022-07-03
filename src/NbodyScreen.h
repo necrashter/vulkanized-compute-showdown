@@ -51,6 +51,8 @@ private:
     float colorShift = 0.25f;
     float bgBrightness = 0.125f;
     float timeMultiplier = 0.05f;
+    float cameraMass = 50000.0f;
+    bool cameraMassEnabled = false;
 
     float gravity = 0.002f;
     float power = 0.75f;

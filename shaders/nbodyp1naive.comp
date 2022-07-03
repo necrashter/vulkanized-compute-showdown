@@ -12,6 +12,7 @@ void main() {
     for (uint i = 0; i < ubo.particleCount; ++i) {
         applyForce(pos, particles[i].pos, acc);
     }
+	applyCameraForce(pos, acc);
 
     particles[index].vel.xyz += ubo.delta * acc;
 

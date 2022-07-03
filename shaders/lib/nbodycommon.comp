@@ -14,6 +14,7 @@ layout(std140, binding = 0) buffer Pos {
 };
 
 layout (binding = 1) uniform UBO {
+	vec4 cameraPosition;
     uint particleCount;
     float delta;
 } ubo;
@@ -31,6 +32,13 @@ layout (local_size_x_id = 3, local_size_y = 1, local_size_z = 1) in;
 void applyForce(in vec4 pos, in vec4 other, inout vec3 acc) {
     const vec3 dir = other.xyz - pos.xyz;
     const float mass = other.w;
+    acc += GRAVITY * dir * mass / pow(dot(dir, dir) + SOFTEN, POWER);
+}
+
+
+void applyCameraForce(in vec4 pos, inout vec3 acc) {
+    const vec3 dir = ubo.cameraPosition.xyz - pos.xyz;
+    const float mass = ubo.cameraPosition.w;
     acc += GRAVITY * dir * mass / pow(dot(dir, dir) + SOFTEN, POWER);
 }
 
