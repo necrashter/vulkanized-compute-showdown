@@ -8,6 +8,13 @@ See [blog post](https://necrashter.github.io/ceng469/project/final) for more inf
 The application has been developed and tested on Ubuntu 20.04.
 System-wide installations of GLM and Vulkan SDK are required, alongside the `glslc` executable for compiling shaders (should be included in Vulkan SDK).
 
+Install the latest version of Vulkan SDK: https://vulkan.lunarg.com/doc/sdk/latest/linux/getting_started.html
+
+Install GLM:
+```
+$ sudo apt install libglm-dev
+```
+
 Create build folder:
 ```sh
 $ mkdir bin
@@ -54,6 +61,7 @@ $ ./main --gpu=1 --validation=off
 # Argument order doesn't matter
 $ ./main --validation=off --gpu=1
 # Start with the rigid body screen. Available screens are: "Emitter", "Nbody", "Rigid"
+# Note that this is the only way to start a screen without ImGui
 $ ./main --screen=Rigid
 $ ./main --screen=Nbody
 $ ./main --screen=Emitter
