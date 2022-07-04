@@ -5,7 +5,7 @@
 // Euler integration
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    if (index >= ubo.particleCount) return;
+    if (index >= PARTICLE_COUNT) return;
 
     particles[index].pos.xyz += ubo.delta * particles[index].vel.xyz;
 }

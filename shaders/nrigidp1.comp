@@ -6,28 +6,29 @@ shared vec4 sharedData[LOCAL_SIZE];
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    if (index >= ubo.particleCount) return;
+    if (index >= PARTICLE_COUNT) return;
 
     vec4 pos = particles[index].pos;
     vec3 vel = particles[index].vel.xyz;
-    vec3 acc = vec3(0.0, -9.8f, 0.0f);
+    vec3 acc = vec3(0.0, -ubo.gravity, 0.0f);
+    vel += ubo.delta * acc;
 
     uint i = 0;
-    for (; i + LOCAL_SIZE < ubo.particleCount; i += LOCAL_SIZE) {
+    for (; i + LOCAL_SIZE < PARTICLE_COUNT; i += LOCAL_SIZE) {
         sharedData[gl_LocalInvocationID.x] = particles[i + gl_LocalInvocationID.x].pos;
 
         memoryBarrierShared();
         barrier();
 
         for (uint j = 0; j < LOCAL_SIZE; ++j) {
-            applyForce(pos, sharedData[j], vel, acc);
+            applyForce(pos, sharedData[j], vel);
         }
 
         memoryBarrierShared();
         barrier();
     }
     {
-        uint remaining = ubo.particleCount - i;
+        uint remaining = PARTICLE_COUNT - i;
         if (gl_LocalInvocationID.x < remaining) {
             sharedData[gl_LocalInvocationID.x] = particles[i + gl_LocalInvocationID.x].pos;
         }
@@ -36,14 +37,12 @@ void main() {
         barrier();
 
         for (uint j = 0; j < remaining; ++j) {
-            applyForce(pos, sharedData[j], vel, acc);
+            applyForce(pos, sharedData[j], vel);
         }
     }
-    /* applyCameraForce(pos, acc); */
 
     collideBounds(pos, vel);
 
-    vel += ubo.delta * acc;
     particles[index].vel.xyz = vel;
 
     // Gradually shift the hue of the particle

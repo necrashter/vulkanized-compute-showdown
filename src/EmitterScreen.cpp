@@ -35,10 +35,6 @@ namespace {
 
         vk::VertexInputAttributeDescription(
                 1, 0, // location and binding
-                vk::Format::eR32G32B32Sfloat, offsetof(Particle, vel)),
-
-        vk::VertexInputAttributeDescription(
-                2, 0, // location and binding
                 vk::Format::eR32Sfloat, offsetof(Particle, color)),
     };
 

@@ -7,9 +7,8 @@ namespace {
     const uint32_t InstanceBinding = 1;
 
     struct ComputeUBO {
-        alignas(16) glm::vec4 cameraPosition;
-        alignas(4)  glm::uint32 particleCount;
         alignas(4)  glm::float32 delta;
+        alignas(4)  glm::float32 gravity;
     };
 
     struct FrameUBO {
@@ -362,23 +361,17 @@ void RigidScreen::prepareComputePipeline(void* oldData, size_t oldDataSize) {
 
     {
         struct SpecializationData {
-            float gravity;
-            float power;
-            float soften;
+            uint32_t particleCount;
             uint32_t localSize;
         } specializationData;
 
         vk::SpecializationMapEntry specializationMapEntries [] = {
-            vk::SpecializationMapEntry(0, offsetof(SpecializationData, gravity), sizeof(float)),
-            vk::SpecializationMapEntry(1, offsetof(SpecializationData, power), sizeof(float)),
-            vk::SpecializationMapEntry(2, offsetof(SpecializationData, soften), sizeof(float)),
-            vk::SpecializationMapEntry(3, offsetof(SpecializationData, localSize), sizeof(uint32_t)),
+            vk::SpecializationMapEntry(0, offsetof(SpecializationData, particleCount), sizeof(uint32_t)),
+            vk::SpecializationMapEntry(1, offsetof(SpecializationData, localSize), sizeof(uint32_t)),
         };
 
+        specializationData.particleCount = particleCount;
         specializationData.localSize = std::min(workgroupSize, maxComputeSharedMemorySize);
-        specializationData.gravity = gravity;
-        specializationData.power = power;
-        specializationData.soften = soften;
 
         vk::SpecializationInfo specializationInfo(
                 std::size(specializationMapEntries),
@@ -411,11 +404,8 @@ void RigidScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32
     updateUniformBuffer(currentFrame);
     {
         ComputeUBO* computeUbo = (ComputeUBO*)computeUBO->mappings[currentFrame];
-        computeUbo->cameraPosition = glm::vec4(
-                noclipCam.position,
-                cameraMassEnabled ? cameraMass : 0.0f);
-        computeUbo->particleCount = particleCount;
         computeUbo->delta = app->delta * timeMultiplier;
+        computeUbo->gravity = gravity;
 
         FrameUBO* ubo = (FrameUBO*)graphicsUniform->mappings[currentFrame];
         ubo->colorShift = colorShift;
@@ -452,8 +442,7 @@ void RigidScreen::imgui() {
 
                 ImGui::DragFloat("Time Multiplier", &timeMultiplier, 0.005f, 0.0f, 10.0f, "%.3f");
 
-                ImGui::Checkbox("Attract to Camera", &cameraMassEnabled);
-                ImGui::DragFloat("Camera Mass", &cameraMass, 10000.0f, -2e5, 2e5, "%.1f");
+                ImGui::DragFloat("Gravity", &gravity, 0.125f, -40.0f, 40.0f, "%.2f");
             }
 
             if (ImGui::CollapsingHeader("Pipeline Settings")) {
@@ -485,10 +474,6 @@ void RigidScreen::imgui() {
                         "Max work group size: %d\nMax shared data: %d",
                         maxComputeWorkGroupSize, maxComputeSharedMemorySize);
                 ImGuiTooltip("Limits of the current GPU");
-
-                ImGui::DragFloat("Gravity", &gravity, 0.0002f, 0.0f, 1.0f, "%.4f");
-                ImGui::DragFloat("Power", &power, 0.05f, 0.0f, 10.0f, "%.2f");
-                ImGui::DragFloat("Soften", &soften, 0.005f, 0.0f, 10.0f, "%.3f");
 
                 ImGui::Separator();
 

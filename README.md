@@ -1,5 +1,12 @@
+# Vulkanized Compute Showdown
 
-# Build
+See [blog post](https://necrashter.github.io/ceng469/project/final) for more information about the project.
+
+
+## Build
+
+The application has been developed and tested on Ubuntu 20.04.
+System-wide installations of GLM and Vulkan SDK are required, alongside the `glslc` executable for compiling shaders (should be included in Vulkan SDK).
 
 Create build folder:
 ```sh
@@ -7,55 +14,48 @@ $ mkdir bin
 $ cd bin
 ```
 
-Configure with default settings in CMakeLists.txt:
+Configure with the default settings:
 ```sh
 $ cmake ..
 ```
 
-Configure with custom settings; enable/disable external dependencies:
+Alternatively, configure with custom settings, e.g., enable the optional KTX library:
 ```sh
-$ cmake -DUSE_IMGUI=ON -DUSE_SHADERC=OFF ..
+$ cmake -DUSE_LIBKTX=ON ..
 ```
-These are the default settings.
+For this, [KTX Software](https://github.com/KhronosGroup/KTX-Software) must be installed system-wide.
+Simply download the `.deb` package from [this link](https://github.com/KhronosGroup/KTX-Software/releases/tag/v4.0.0) and install it.
 
-Compile with 4 processes:
+For all configuration options, please see `CMakeLists.txt`.
+
+After configuring with CMake, compile with 4 processes:
 ```sh
 $ make -j4
 ```
 
-Run:
-```
+Run the program:
+```sh
 $ ./main
 ```
+The working directory must be `bin` so that the program can load the assets correctly.
 
 
-# Future Work
+## Command-Line Arguments
 
-## Optimizations
+The application contains an user interface implemented with ImGui, which can be disabled with the configuration argument `-DUSE_IMGUI=OFF`, as well as a basic command line interface.
 
-- Implement a dedicated transfer queue
-- Optimize one shot commands
-- More efficient swap chain recreation, see vulkan tut comments
-    - Done, not as good as I initially expected, but avoids recompiling shaders
-	- Update: It's now as good as I expected. Renderpass doesn't need to be recreated, no need to wait events etc.
-- _"Using a UBO this way is not the most efficient way to pass frequently changing values to the shader. A more efficient way to pass a small buffer of data to shaders are push constants. We may look at these in a future chapter."_
-    - Push Constants are done as a part of gltf rendering
-
-
-## VulkanTutorial Conclusion
-
-Not done from tutorial:
-- [Multi-sampling](https://vulkan-tutorial.com/en/Multisampling). I don't think it's required.
-
-Ideas from conclusion:
-- Push constants
-    - I took a detour and implemented model loading with glTF instead of obj. Push constants are implemented to pass model matrix for hierarchical rendering.
-- Instanced rendering
-- Dynamic uniforms
-- Separate images and sampler descriptors
-    - Done as a result of implementing glTF support.
-- Pipeline cache
-- Multi-threaded command buffer generation
-- Multiple subpasses
-- Compute shaders
+```sh
+# List the available GPUs on the system
+$ ./main --list-gpus
+# Start with the GPU at index 1
+$ ./main --gpu=1
+# Start with the GPU at index 1 and disable the validation layer
+$ ./main --gpu=1 --validation=off
+# Argument order doesn't matter
+$ ./main --validation=off --gpu=1
+# Start with the rigid body screen. Available screens are: "Emitter", "Nbody", "Rigid"
+$ ./main --screen=Rigid
+$ ./main --screen=Nbody
+$ ./main --screen=Emitter
+```
 

@@ -18,6 +18,11 @@ namespace {
 #else
         ss << " - Compiled without ImGUI\n";
 #endif
+#ifdef USE_LIBKTX
+        ss << " + Compiled with KTX library\n";
+#else
+        ss << " - Compiled without KTX library\n";
+#endif
         return ss.str();
     }
 }
@@ -60,5 +65,10 @@ inline void printTimeTagStderr(){
     std::cout << ']';
 }
 
+#ifdef LOG_TIME
 #define TLOG(s) printTimeTag(); std::cout << '[' << s << "] "
 #define TERR(s) printTimeTagStderr(); std::cerr << '[' << s << "] "
+#else
+#define TLOG(s) std::cout << '[' << s << "] "
+#define TERR(s) std::cerr << '[' << s << "] "
+#endif

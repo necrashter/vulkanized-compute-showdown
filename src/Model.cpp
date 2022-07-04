@@ -262,7 +262,7 @@ void Model::loadFile(const char* filename) {
 
 // After loading the model, create vertex and index buffers
 void Model::createBuffers() {
-    TLOG("ModelLoader") << "Create vertex and index buffers..." << std::endl;
+    TLOG("ModelLoader") << "Creating vertex and index buffers..." << std::endl;
     vk::DeviceSize vertexBufferSize = sizeof(vertexData[0]) * vertexData.size();
     vk::DeviceSize indexBufferSize = sizeof(indexData[0]) * indexData.size();
     vk::DeviceSize bufferSize = std::max(vertexBufferSize, indexBufferSize);

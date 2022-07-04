@@ -7,8 +7,13 @@ ModelViewScreen::ModelViewScreen(VulkanBaseApp* app):
     model.addVertexAttribute("POSITION", vk::Format::eR32G32B32Sfloat);
     model.addVertexAttribute("NORMAL", vk::Format::eR32G32B32Sfloat);
     model.addVertexAttribute("TEXCOORD_0", vk::Format::eR32G32Sfloat);
-    model.loadFile("../assets/FlightHelmet/FlightHelmet.gltf");
+    model.loadFile("../assets/VikingRoom.gltf");
     model.createBuffers();
+
+    noclipCam.position = glm::vec3(6.5, 6.9, 6.9);
+    noclipCam.pitch = -35;
+    noclipCam.yaw = -130.0;
+    noclipCam.update_vectors();
 
     // Create Descriptor Pool
     // ---------------------------------------------------------------

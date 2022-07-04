@@ -4,12 +4,12 @@
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    if (index >= ubo.particleCount) return;
+    if (index >= PARTICLE_COUNT) return;
 
     vec4 pos = particles[index].pos;
     vec3 acc = vec3(0.0);
 
-    for (uint i = 0; i < ubo.particleCount; ++i) {
+    for (uint i = 0; i < PARTICLE_COUNT; ++i) {
         applyForce(pos, particles[i].pos, acc);
     }
 	applyCameraForce(pos, acc);

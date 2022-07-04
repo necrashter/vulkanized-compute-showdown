@@ -210,6 +210,21 @@ void VulkanBaseApp::drawImgui() {
         ImGui::EndMainMenuBar();
     }
 
+    if (screen == nullptr) {
+        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoNav;
+        ImGui::Begin("Abyss", nullptr, windowFlags);
+        ImGui::TextUnformatted(
+                "No screen is loaded at the moment.\n"
+                "You can use the \"Screen\" menu at the top left corner to load a screen.\n\n"
+                "After opening a screen,\n"
+                "- Drag with left mouse button on empty space to look\n"
+                "- Use WASD to move\n"
+                );
+
+        if (ImGui::Button("Quit")) glfwSetWindowShouldClose(window, GLFW_TRUE);
+        ImGui::End();
+    }
+
     if (imguiShowPerformance) {
         ImGuiWindowFlags windowFlags = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoNav;
         if (ImGui::Begin("Performance", &imguiShowPerformance, windowFlags)) {

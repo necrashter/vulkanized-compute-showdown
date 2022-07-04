@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.13)
 
 
 project(
-    vulkan-project
-    VERSION 0.0.1
-    DESCRIPTION "Vulkan Project"
+    vulkanized-compute-showdown
+    VERSION 1.0.0
+    DESCRIPTION "Vulkanized Compute Showdown"
     LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -13,8 +13,9 @@ set(CMAKE_CXX_FLAGS "-Wall -g")
 
 # COMPILE OPTIONS
 option(USE_IMGUI "Enable Dear Imgui for a nice graphical user interface" ON)
+option(USE_LIBKTX "Enable libktx to read GPU-oriented texture format KTX" OFF)
 
-option(USE_LIBKTX "Enable libktx to read GPU-oriented texture format KTX" ON)
+# UNUSED
 option(USE_SHADERC "Enable shaderc for compiling GLSL shaders at run-time" OFF)
 
 

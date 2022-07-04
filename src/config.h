@@ -4,9 +4,9 @@
 const struct {
     const char* name = "Vulkanized Compute Showdown";
     struct {
-        const int major = 0;
+        const int major = 1;
         const int minor = 0;
-        const int patch = 1;
+        const int patch = 0;
     } version;
 } ProgramInfo;
 
@@ -22,5 +22,8 @@ const int WIDTH = 1280;
 const int HEIGHT = 720;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
+
+// Logs the current time with each message
+// #define LOG_TIME
 
 #endif

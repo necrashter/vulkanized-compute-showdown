@@ -8,7 +8,6 @@ namespace {
 
     struct ComputeUBO {
         alignas(16) glm::vec4 cameraPosition;
-        alignas(4)  glm::uint32 particleCount;
         alignas(4)  glm::float32 delta;
     };
 
@@ -439,6 +438,7 @@ void NbodyScreen::prepareComputePipeline(void* oldData, size_t oldDataSize) {
             float power;
             float soften;
             uint32_t localSize;
+            uint32_t particleCount;
         } specializationData;
 
         vk::SpecializationMapEntry specializationMapEntries [] = {
@@ -446,12 +446,14 @@ void NbodyScreen::prepareComputePipeline(void* oldData, size_t oldDataSize) {
             vk::SpecializationMapEntry(1, offsetof(SpecializationData, power), sizeof(float)),
             vk::SpecializationMapEntry(2, offsetof(SpecializationData, soften), sizeof(float)),
             vk::SpecializationMapEntry(3, offsetof(SpecializationData, localSize), sizeof(uint32_t)),
+            vk::SpecializationMapEntry(4, offsetof(SpecializationData, particleCount), sizeof(uint32_t)),
         };
 
         specializationData.localSize = std::min(workgroupSize, maxComputeSharedMemorySize);
         specializationData.gravity = gravity;
         specializationData.power = power;
         specializationData.soften = soften;
+        specializationData.particleCount = particleCount;
 
         vk::SpecializationInfo specializationInfo(
                 std::size(specializationMapEntries),
@@ -541,7 +543,6 @@ void NbodyScreen::submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32
         computeUbo->cameraPosition = glm::vec4(
                 noclipCam.position,
                 cameraMassEnabled ? cameraMass : 0.0f);
-        computeUbo->particleCount = particleCount;
         computeUbo->delta = app->delta * timeMultiplier;
 
         FrameUBO* ubo = (FrameUBO*)graphicsUniform->mappings[currentFrame];

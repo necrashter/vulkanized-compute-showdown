@@ -49,12 +49,8 @@ private:
     float colorShift = 0.25f;
     float bgBrightness = 0.125f;
     float timeMultiplier = 1.0f;
-    float cameraMass = 50000.0f;
-    bool cameraMassEnabled = false;
+    float gravity = 9.8f;
 
-    float gravity = 1.0f;
-    float power = 0.75f;
-    float soften = 0.05f;
     uint32_t workgroupSize = 256;
 
 public:
