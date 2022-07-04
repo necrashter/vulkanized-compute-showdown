@@ -26,6 +26,7 @@ public:
     virtual void submitGraphics(const vk::CommandBuffer* bufferToSubmit, uint32_t currentFrame);
 
     virtual void mouseMovementCallback(GLFWwindow* window, double xpos, double ypos) = 0;
+    virtual void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int mods) { }
 
     virtual void update(float delta) = 0;
 

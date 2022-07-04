@@ -43,6 +43,8 @@ public:
     virtual void submitGraphics(const vk::CommandBuffer*, uint32_t) override;
     virtual void update(float) override;
 
+    virtual void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int mods) override;
+
 #ifdef USE_IMGUI
     virtual void imgui() override;
 #endif

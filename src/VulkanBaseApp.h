@@ -137,6 +137,7 @@ private:
         glfwSetWindowUserPointer(window, this);
         glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
         glfwSetCursorPosCallback(window, mouseMovementCallback);
+        glfwSetKeyCallback(window, keyboardCallback);
     }
 
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
@@ -148,6 +149,13 @@ private:
         auto app = reinterpret_cast<VulkanBaseApp*>(glfwGetWindowUserPointer(window));
         if (app->screen) {
             app->screen->mouseMovementCallback(window, xpos, ypos);
+        }
+    }
+
+    static void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+        auto app = reinterpret_cast<VulkanBaseApp*>(glfwGetWindowUserPointer(window));
+        if (app->screen) {
+            app->screen->keyboardCallback(window, key, scancode, action, mods);
         }
     }
 

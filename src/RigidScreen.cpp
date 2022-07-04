@@ -59,6 +59,8 @@ namespace {
         "planetl2",
         "asteroid0",
         "asteroid1",
+        "Monkey",
+        "Teapot",
     };
 
     uint32_t maxComputeSharedMemorySize;

@@ -286,6 +286,11 @@ void EmitterScreen::recordRenderCommands(vk::RenderPassBeginInfo renderPassInfo,
     }
 }
 
+void EmitterScreen::keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (action == GLFW_PRESS) {
+        if (key == GLFW_KEY_R) restartParticles = true;
+    }
+}
 
 void EmitterScreen::update(float delta) {
     CameraScreen::update(delta);
