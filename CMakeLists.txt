@@ -26,7 +26,6 @@ option(USE_SHADERC "Enable shaderc for compiling GLSL shaders at run-time" OFF)
 list(APPEND EXTRA_INCLUDES "${PROJECT_SOURCE_DIR}/shaders/lib")
 
 if(USE_IMGUI)
-    # add the MuhLib library
     add_subdirectory(libs/imgui)
     list(APPEND EXTRA_LIBS imgui)
     list(APPEND EXTRA_INCLUDES "${PROJECT_SOURCE_DIR}/libs/imgui")

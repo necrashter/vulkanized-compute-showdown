@@ -556,7 +556,7 @@ void NbodyScreen::imgui() {
     CameraScreen::imgui();
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("Scene")) {
-            ImGui::MenuItem("Particle Settings", NULL, &showParticleSettings);
+            ImGui::MenuItem("Simulation Settings", NULL, &showParticleSettings);
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();

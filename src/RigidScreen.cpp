@@ -21,35 +21,32 @@ namespace {
         alignas(16) glm::vec4 vel;
     };
 
-    std::vector<Particle> generateShaderData(uint32_t particlesPerAttractor, uint32_t activeAttractors) {
+    std::vector<Particle> generateShaderData(uint32_t count) {
         std::default_random_engine randomEngine((unsigned)time(nullptr));
         std::normal_distribution<float> randomDist(0.0f, 1.0f);
 
-        std::vector<Particle> particles(particlesPerAttractor * activeAttractors);
+        std::vector<Particle> particles(count);
 
-        uint32_t i = 0;
-        for (uint32_t ai = 0; ai < activeAttractors; ++ai) {
-            auto& attractor = RigidScreen::attractors[ai];
-            float color = ai / (float) std::size(RigidScreen::attractors);
-            // First particle
-            particles[i].pos = glm::vec4(attractor*1.5f, 1.0f);
-            particles[i].vel = glm::vec4(0.0f, 0.0f, 0.0f, color);
-            ++i;
-            for (uint32_t j = 1; j < particlesPerAttractor; ++j) {
+        constexpr float horizontalPad = 2.0f;
+        constexpr float verticalPad = 2.0f;
+        constexpr uint32_t xSize = 4;
+        constexpr uint32_t ySize = 4;
+        constexpr float xwidth = ((float)xSize) * horizontalPad /2.0f;
+        constexpr float ywidth = ((float)ySize) * horizontalPad /2.0f;
+        for (uint32_t i = 0, h = 0; i < count; ++h) {
+            for (uint32_t x = 0; x < xSize; ++x) for (uint32_t y = 0; y < ySize; ++y) {
+                float color = i / (float) count;
                 glm::vec3 relativePos(
-                        1.5f + 0.5f * randomDist(randomEngine),
-                        j * 1.2f,
-                        1.5f + 0.5f * randomDist(randomEngine)
+                        x * horizontalPad - xwidth + 0.5f * randomDist(randomEngine),
+                        h * verticalPad,
+                        y * horizontalPad - ywidth + 0.5f * randomDist(randomEngine)
                         );
                 particles[i].pos = glm::vec4(
-                        attractor + relativePos,
+                        relativePos,
                         // radius
                         std::max(randomDist(randomEngine) * 0.25f + 0.5f, 0.1f)
                         );
-                glm::vec3 angular = glm::vec3(0.5f, 1.5f, 0.5f) * (((ai % 2) == 0) ? 1.0f : -1.0f);
-                glm::vec3 velocity = glm::cross(relativePos, angular) + glm::vec3(randomDist(randomEngine), randomDist(randomEngine), randomDist(randomEngine) * 0.025f);
-                particles[i].vel = glm::vec4(velocity, color);
-
+                particles[i].vel = glm::vec4(0.0f, 0.0f, 0.0f, color);
                 ++i;
             }
         }
@@ -68,7 +65,11 @@ namespace {
     uint32_t maxComputeWorkGroupSize;
 
     const char* description =
-        "This is an epic simulation."
+        "Rigid body simulation is a type of physics simulation that involves unbreakable "
+        "and inflexible objects. In this example, angular properties of the objects are ignored "
+        "and all objects are rendered as spheres using instancing.\n\n"
+        "Similar to the N-body simulation, this sample also runs with 2 compute shader passes and "
+        "O(n^2) complexity."
         "";
 }
 
@@ -95,13 +96,13 @@ RigidScreen::RigidScreen(VulkanBaseApp* app):
             throw std::runtime_error("Requested model is not found in glTF file");
         }
     }
-    selectedPrimitiveIndex = 2;
+    selectedPrimitiveIndex = 1;
 
     auto limits = app->physicalDevice.getProperties().limits;
     maxComputeSharedMemorySize = (uint32_t)(limits.maxComputeSharedMemorySize / sizeof(glm::vec4));
     maxComputeWorkGroupSize = limits.maxComputeWorkGroupSize[0];
 
-    noclipCam.position = glm::vec3(-6*1.7320508075688772, 6, 0);
+    noclipCam.position = glm::vec3(-20*1.7320508075688772, 20, 0);
     noclipCam.pitch = -30;
     noclipCam.yaw = 0.0;
     noclipCam.update_vectors();
@@ -347,8 +348,8 @@ void RigidScreen::prepareComputePipeline(void* oldData, size_t oldDataSize) {
                 oldData, oldDataSize,
                 vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferSrc);
     } else {
-        particleCount = particlesPerAttractor * activeAttractors;
-        auto shaderData = generateShaderData(particlesPerAttractor, activeAttractors);
+        particleCount = selectedParticles;
+        auto shaderData = generateShaderData(particleCount);
         computeSSBO = compute->createShaderStorage(
                 shaderData.data(),
                 sizeof(Particle) * shaderData.size(),
@@ -428,13 +429,13 @@ void RigidScreen::imgui() {
     CameraScreen::imgui();
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("Scene")) {
-            ImGui::MenuItem("Particle Settings", NULL, &showParticleSettings);
+            ImGui::MenuItem("Simulation Settings", NULL, &showParticleSettings);
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
     }
     if (showParticleSettings) {
-        if (ImGui::Begin("N-Body Simulation", &showParticleSettings)) {
+        if (ImGui::Begin("Rigid Body Simulation", &showParticleSettings)) {
             ImGui::PushItemWidth(-114);
 
             if (ImGui::CollapsingHeader("Description")) {
@@ -491,9 +492,7 @@ void RigidScreen::imgui() {
 
                 ImGui::TextUnformatted("Starting Setup");
 
-                ImGui::DragInt("Particles", (int*) &particlesPerAttractor, 128, 128, maxParticlesPerAttractor);
-                ImGui::DragInt("Attractors", (int*) &activeAttractors, 1, 1, maxActiveAttractors);
-                ImGui::Text("Total particles will be %d", particlesPerAttractor*activeAttractors);
+                ImGui::DragInt("Object Count", (int*) &selectedParticles, 128, 128, maxParticles);
 
                 ImGui::Separator();
 

@@ -19,7 +19,7 @@ layout(location = 1) out vec3 fragNormal;
 layout(location = 2) out float fragColor;
 
 void main() {
-    vec4 worldpos = vec4(pos.xyz + 0.002*pos.w*vPos, 1.0);
+    vec4 worldpos = vec4(pos.xyz + clamp(0.002*pos.w, 0.02, 1.0)*vPos, 1.0);
     gl_Position = ubo.proj * ubo.view * worldpos;
 
     fragPos = worldpos.xyz;

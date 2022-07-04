@@ -48,7 +48,7 @@ private:
 
     float colorShift = 0.25f;
     float bgBrightness = 0.125f;
-    float timeMultiplier = 0.05f;
+    float timeMultiplier = 1.0f;
     float cameraMass = 50000.0f;
     bool cameraMassEnabled = false;
 
@@ -59,17 +59,8 @@ private:
 
 public:
     uint32_t particleCount;
-    uint32_t particlesPerAttractor = 1;
-    constexpr static uint32_t maxParticlesPerAttractor = 6*1024;
-    uint32_t activeAttractors = 6;
-    constexpr static glm::vec3 attractors[] = {
-        glm::vec3(0.0f, 4.0f, 0.0f),
-        glm::vec3(5.0f, 0.0f, 0.0f),
-        glm::vec3(-5.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 0.0f, 5.0f),
-        glm::vec3(0.0f, 0.0f, -5.0f),
-    };
-    constexpr static uint32_t maxActiveAttractors = std::size(attractors);
+    uint32_t selectedParticles = 1024*4;
+    constexpr static uint32_t maxParticles = 1024 * 16;
 
 public:
     RigidScreen(VulkanBaseApp* app);
