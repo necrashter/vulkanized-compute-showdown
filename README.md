@@ -67,3 +67,14 @@ $ ./main --screen=Nbody
 $ ./main --screen=Emitter
 ```
 
+
+# AppImage
+
+https://appimage-builder.readthedocs.io/en/latest/intro/tutorial.html
+
+AppImageBuilder.yml
+```
+    include:
+    - libc6:amd64
+    - libglfw3:amd64
+```

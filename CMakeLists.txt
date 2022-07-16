@@ -141,3 +141,6 @@ target_link_libraries(main PUBLIC
 	${Vulkan_LIBRARIES}
 	${EXTRA_LIBS}
 	)
+
+install(TARGETS main DESTINATION bin)
+
